@@ -1,0 +1,94 @@
+import { useEffect, useState } from "react";
+import { Loader2, CheckCircle2, QrCode, AlertCircle } from "lucide-react";
+import { api } from "../lib/api";
+
+export default function AdminSettingsCard() {
+    const [settings, setSettings] = useState({ upiId: "", merchantName: "Mehndi Studio" });
+    const [busy, setBusy] = useState(false);
+    const [message, setMessage] = useState("");
+    const [error, setError] = useState("");
+
+    const load = async () => {
+        try {
+            const { data } = await api.get("/api/settings");
+            setSettings({
+                upiId: data.upiId || "",
+                merchantName: data.merchantName || "Mehndi Studio",
+            });
+        } catch { /* ignore */ }
+    };
+
+    useEffect(() => { load(); }, []);
+
+    const save = async (e) => {
+        e.preventDefault();
+        setBusy(true); setError(""); setMessage("");
+        try {
+            await api.post("/api/settings", settings);
+            setMessage("Saved — QR codes will now include this UPI ID");
+            setTimeout(() => setMessage(""), 3000);
+        } catch (err) {
+            setError(err.response?.data?.message || "Save failed");
+        } finally { setBusy(false); }
+    };
+
+    const configured = Boolean(settings.upiId);
+
+    return (
+        <div className="rounded-3xl border border-[#eadfce] bg-white p-6">
+            <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="grid h-10 w-10 place-items-center rounded-full bg-[#f1cf8a]/40 text-[#7d3f24]">
+                        <QrCode size={20} />
+                    </div>
+                    <div>
+                        <h2 className="serif text-2xl font-semibold">Payment settings</h2>
+                        <p className="text-xs text-[#8a6d53]">
+                            Users pay via dynamic UPI QR (amount pre-filled)
+                        </p>
+                    </div>
+                </div>
+                <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${configured ? "bg-[#e2f0e5] text-[#1d7a3e]" : "bg-[#f8e4df] text-[#8c392d]"
+                    }`}>
+                    {configured ? <><CheckCircle2 size={12} /> Configured</> : <><AlertCircle size={12} /> Not configured</>}
+                </span>
+            </div>
+
+            <form onSubmit={save} className="mt-5 grid gap-3">
+                <label className="grid gap-1.5 text-xs font-semibold text-[#5b4636]">
+                    UPI ID (VPA) *
+                    <input required value={settings.upiId}
+                        onChange={e => setSettings({ ...settings, upiId: e.target.value })}
+                        placeholder="yourname@upi"
+                        className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-2.5 font-mono text-sm outline-none focus:ring-2 focus:ring-[#b07a4f]" />
+                </label>
+
+                <label className="grid gap-1.5 text-xs font-semibold text-[#5b4636]">
+                    Merchant name (shown on UPI app)
+                    <input value={settings.merchantName}
+                        onChange={e => setSettings({ ...settings, merchantName: e.target.value })}
+                        placeholder="Mehndi Studio"
+                        className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#b07a4f]" />
+                </label>
+
+                <button disabled={busy}
+                    className="mt-1 inline-flex items-center justify-center gap-2 rounded-full bg-[#24170f] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+                    {busy ? <><Loader2 size={13} className="animate-spin" /> Saving…</> : "Save settings"}
+                </button>
+
+                {message && (
+                    <div className="flex items-center gap-2 rounded-xl bg-[#e2f0e5] px-4 py-2 text-xs font-semibold text-[#1d7a3e]">
+                        <CheckCircle2 size={13} /> {message}
+                    </div>
+                )}
+                {error && (
+                    <div className="rounded-xl bg-[#f8e4df] px-4 py-2 text-xs text-[#8c392d]">{error}</div>
+                )}
+            </form>
+
+            <div className="mt-4 rounded-xl bg-[#faf5ed] px-4 py-3 text-[11px] leading-5 text-[#5b4636]">
+                <strong>How it works:</strong> when a user clicks Pay now, the app generates a UPI QR with the amount already filled in. Users open GPay / PhonePe / Paytm / BHIM, scan, and confirm — no typing, no mistakes.
+            </div>
+        </div>
+    );
+}
