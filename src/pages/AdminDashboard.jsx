@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-    LogOut, Image as ImageIcon, Users, Bell, Plus, X, Upload, Loader2, Trash2,
+    LogOut, Image as ImageIcon, Users, Bell, Plus, X, Upload, Loader2,
     Calendar, Clock, CheckCircle2, XCircle, ShieldAlert, Play, Square, BarChart3, LayoutGrid,
 } from "lucide-react";
 import { io } from "socket.io-client";
@@ -9,21 +9,9 @@ import { api, API_BASE } from "../lib/api";
 import { playNotificationSound, primeAudioOnFirstGesture } from "../lib/notify";
 import AdminSettingsCard from "./AdminSettingsCard";
 import ReportsPanel from "./ReportsPanel";
-
-function imageUrl(src) {
-    if (!src) return "";
-    if (src.startsWith("http://") || src.startsWith("https://")) return src;
-    return `${API_BASE}${src}`;
-}
-
-function currency(value) {
-    return new Intl.NumberFormat("en-GB", {
-        style: "currency",
-        currency: "GBP",
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    }).format(value || 0);
-}
+import AdminDesigns from "./AdminDesigns";
+import { imageUrl, currency } from "../lib/format";
+import SafeImage from "../components/SafeImage";
 
 const CATEGORY_OPTIONS = [
     { id: "arabic", name: "Arabic Mehndi" },
@@ -38,7 +26,7 @@ const CATEGORY_OPTIONS = [
 export default function AdminDashboard({ user, onLogout }) {
     const [toast, setToast] = useState(null);
     const [addOpen, setAddOpen] = useState(false);
-    const [designs, setDesigns] = useState([]);
+    const [designsKey, setDesignsKey] = useState(0); // bump => AdminDesigns reloads
     const [lightbox, setLightbox] = useState(null);
 
     /* orders */
@@ -72,7 +60,7 @@ export default function AdminDashboard({ user, onLogout }) {
                 n.type === "payment-claim"
             ) {
                 showToast("info", n.title);
-                loadOrders();
+                loadOrders(true); // silent: no spinner, open dialogs stay open
             } else {
                 showToast("info", n.title);
             }
@@ -84,15 +72,8 @@ export default function AdminDashboard({ user, onLogout }) {
 
     const [tab, setTab] = useState("dashboard");
 
-    const loadDesigns = async () => {
-        try {
-            const { data } = await api.get("/api/designs");
-            setDesigns(data);
-        } catch { /* ignore */ }
-    };
-
-    const loadOrders = async () => {
-        setOrdersLoading(true);
+    const loadOrders = async (silent = false) => {
+        if (!silent) setOrdersLoading(true);
         try {
             const { data } = await api.get("/api/orders");
             setOrders(data);
@@ -100,22 +81,11 @@ export default function AdminDashboard({ user, onLogout }) {
         finally { setOrdersLoading(false); }
     };
 
-    useEffect(() => { loadDesigns(); loadOrders(); }, []);
+    useEffect(() => { loadOrders(); }, []);
 
     const showToast = (kind, text) => {
         setToast({ kind, text });
         setTimeout(() => setToast(null), 3500);
-    };
-
-    const removeDesign = async (id) => {
-        if (!confirm("Remove this design from Drive?")) return;
-        try {
-            await api.delete(`/api/designs/${id}`);
-            showToast("ok", "Design removed");
-            loadDesigns();
-        } catch (err) {
-            showToast("err", err.response?.data?.message || "Delete failed");
-        }
     };
 
     const pendingCount = orders.filter(o => o.status === "pending").length;
@@ -164,7 +134,6 @@ export default function AdminDashboard({ user, onLogout }) {
                         </p>
                     </div>
 
-                    {/* Tab switcher — full-width on mobile */}
                     <div className="inline-flex w-full rounded-full border border-[#ded0bc] bg-white p-1 sm:w-auto">
                         <button
                             onClick={() => setTab("dashboard")}
@@ -250,7 +219,7 @@ export default function AdminDashboard({ user, onLogout }) {
                                     </p>
                                 </div>
                                 <button
-                                    onClick={loadOrders}
+                                    onClick={() => loadOrders()}
                                     className="self-start rounded-full border border-[#ded0bc] bg-white px-4 py-2.5 text-sm font-semibold hover:bg-[#f4eadc] sm:self-auto"
                                 >
                                     Refresh
@@ -276,7 +245,7 @@ export default function AdminDashboard({ user, onLogout }) {
                                             key={o.id}
                                             order={o}
                                             onAction={setActionOrder}
-                                            onRefresh={loadOrders}
+                                            onRefresh={() => loadOrders(true)}
                                             onViewImage={(src, alt) => setLightbox({ src, alt })}
                                         />
                                     ))}
@@ -284,68 +253,14 @@ export default function AdminDashboard({ user, onLogout }) {
                             )}
                         </section>
 
-                        {/* ---------- Designs ---------- */}
-                        <section className="mt-10 sm:mt-12">
-                            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                                <div>
-                                    <h2 className="serif text-xl font-semibold sm:text-2xl">Your designs</h2>
-                                    <p className="text-xs text-[#8a6d53] sm:text-sm">
-                                        {designs.length} {designs.length === 1 ? "design" : "designs"} stored in Drive
-                                    </p>
-                                </div>
-                                <button
-                                    onClick={() => setAddOpen(true)}
-                                    className="inline-flex items-center justify-center gap-2 self-start rounded-full bg-[#24170f] px-5 py-2.5 text-sm font-semibold text-white sm:self-auto"
-                                >
-                                    <Plus size={15} /> Add design
-                                </button>
-                            </div>
-
-                            {designs.length === 0 ? (
-                                <div className="rounded-3xl border border-dashed border-[#d9c7b0] bg-white p-10 text-center text-sm text-[#8a6d53] sm:p-12">
-                                    No designs yet — click <strong>Add design</strong> to upload your first one to Drive.
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
-                                    {designs.map((d) => (
-                                        <div
-                                            key={d.id}
-                                            className="group relative overflow-hidden rounded-2xl border border-[#eadfce] bg-white"
-                                        >
-                                            <div
-                                                className="aspect-[4/5] cursor-zoom-in bg-[#eadcc9]"
-                                                onClick={() => setLightbox({ src: imageUrl(d.image), alt: d.name })}
-                                            >
-                                                <img
-                                                    src={imageUrl(d.image)}
-                                                    alt={d.name}
-                                                    loading="lazy"
-                                                    decoding="async"
-                                                    className="h-full w-full object-cover"
-                                                />
-                                            </div>
-                                            <div className="p-2.5 sm:p-3">
-                                                <div className="text-[9px] uppercase tracking-[.14em] text-[#9a7352] sm:text-[10px] sm:tracking-[.16em]">
-                                                    {d.categoryName}
-                                                </div>
-                                                <div className="truncate text-xs font-semibold sm:text-sm">
-                                                    {d.name}
-                                                </div>
-                                            </div>
-
-                                            {/* Delete: always visible on mobile, hover-reveal on ≥sm */}
-                                            <button
-                                                onClick={() => removeDesign(d.id)}
-                                                aria-label="Remove design"
-                                                className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-white/90 text-[#7d3f24] shadow-sm transition sm:opacity-0 sm:group-hover:opacity-100"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </section>
+                        {/* ---------- Designs (search + infinite scroll) ---------- */}
+                        <AdminDesigns
+                            categories={CATEGORY_OPTIONS}
+                            refreshKey={designsKey}
+                            onAdd={() => setAddOpen(true)}
+                            onView={setLightbox}
+                            onToast={showToast}
+                        />
                     </>
                 )}
             </main>
@@ -355,7 +270,7 @@ export default function AdminDashboard({ user, onLogout }) {
                     onClose={() => setAddOpen(false)}
                     onSaved={() => {
                         setAddOpen(false);
-                        loadDesigns();
+                        setDesignsKey(k => k + 1);
                         showToast("ok", "Design uploaded to Drive ✓");
                     }}
                 />
@@ -368,7 +283,7 @@ export default function AdminDashboard({ user, onLogout }) {
                     onClose={() => setActionOrder(null)}
                     onDone={() => {
                         setActionOrder(null);
-                        loadOrders();
+                        loadOrders(true);
                         showToast("ok", "Order updated");
                     }}
                 />
@@ -528,11 +443,9 @@ function OrderCard({ order, onAction, onRefresh, onViewImage }) {
                         className="h-16 w-14 cursor-zoom-in overflow-hidden rounded-xl border border-[#eadfce] bg-[#eadcc9] transition hover:ring-2 hover:ring-[#7d3f24] sm:h-20 sm:w-16"
                         title={`View ${it.name}`}
                     >
-                        <img
-                            src={imageUrl(it.image)}
+                        <SafeImage
+                            src={imageUrl(it.image, "thumb")}
                             alt={it.name}
-                            loading="lazy"
-                            decoding="async"
                             className="h-full w-full object-cover"
                         />
                     </button>
@@ -727,9 +640,11 @@ function ImageLightbox({ src, alt, onClose }) {
                 >
                     <X size={20} />
                 </button>
-                <img
+                <SafeImage
                     src={src}
                     alt={alt}
+                    eager
+                    fallbackClassName="h-64 w-full"
                     className="max-h-[80dvh] w-full object-contain sm:max-h-[88vh] sm:w-auto"
                 />
                 <div className="bg-[#24170f] px-4 py-3 text-center text-xs font-semibold text-[#f1cf8a] sm:text-sm">
@@ -867,8 +782,19 @@ function AddDesignModal({ onClose, onSaved }) {
     const [error, setError] = useState("");
 
     const pickFile = (f) => {
+        if (!f) return;
+        if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) {
+            setError("Please choose a JPG, PNG or WebP image.");
+            return;
+        }
+        if (f.size > 8 * 1024 * 1024) {
+            setError("Image is too large (max 8 MB).");
+            return;
+        }
+        setError("");
+        if (preview) URL.revokeObjectURL(preview);
         setImage(f);
-        if (f) setPreview(URL.createObjectURL(f));
+        setPreview(URL.createObjectURL(f));
     };
 
     const submit = async (e) => {
@@ -931,7 +857,7 @@ function AddDesignModal({ onClose, onSaved }) {
                                 <input
                                     required
                                     type="file"
-                                    accept="image/*"
+                                    accept="image/jpeg,image/png,image/webp"
                                     onChange={(e) => pickFile(e.target.files?.[0])}
                                     className="absolute inset-0 cursor-pointer opacity-0"
                                 />

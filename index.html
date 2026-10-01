@@ -3,31 +3,19 @@
   <head>
     <meta charset="UTF-8" />
 
-    <!-- ============================================================
-         VIEWPORT — critical for responsive design
-         - width=device-width: match CSS px to device-independent px
-         - initial-scale=1: no initial zoom
-         - viewport-fit=cover: allow content behind notches/home indicator
-                             (used with env(safe-area-inset-*) in CSS)
-         - maximum-scale=5: allow pinch-zoom for accessibility
-                             (never use user-scalable=no — it's an a11y violation)
-         ============================================================ -->
+    <!-- viewport-fit=cover lets content use the notch area (safe-area insets in CSS).
+         Pinch-zoom stays enabled for accessibility. -->
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
 
-    <!-- ============================================================
-         THEME COLOR — colors the browser chrome on mobile
-         - media light: warm cream (matches app background)
-         - media dark:  deep brown (matches header)
-         ============================================================ -->
+    <!-- Browser chrome colour on mobile -->
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbf8f2" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#24170f" />
 
-    <!-- ============================================================
-         PRIMARY META
-         ============================================================ -->
+    <!-- Primary meta -->
+    <title>Mehndi Studio — Art on Your Hands</title>
     <meta
       name="description"
       content="Discover beautiful Mehndi designs by style, occasion and price. Book appointments, pay via UPI, and manage your orders — all in one place."
@@ -35,33 +23,24 @@
     <meta name="author" content="Mehndi Studio" />
     <meta name="application-name" content="Mehndi Studio" />
 
-    <!-- Keywords (minor SEO value but harmless) -->
-    <meta
-      name="keywords"
-      content="mehndi, henna, bridal mehndi, arabic mehndi, indian mehndi, pakistani mehndi, mehndi designs, mehndi booking"
-    />
-
-    <!-- ============================================================
-         iOS / APPLE SPECIFIC
-         - apple-mobile-web-app-capable: enables standalone mode
-         - status-bar-style: controls the top bar color in standalone
-         - apple-mobile-web-app-title: name shown on home screen
-         ============================================================ -->
+    <!-- iOS / standalone mode -->
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Mehndi Studio" />
 
-    <!-- Prevent iOS from auto-linking phone numbers/dates/addresses in text -->
-    <meta name="format-detection" content="telephone=no" />
-    <meta name="format-detection" content="date=no" />
-    <meta name="format-detection" content="address=no" />
-    <meta name="format-detection" content="email=no" />
+    <!-- One tag only: browsers ignore repeated format-detection tags -->
+    <meta
+      name="format-detection"
+      content="telephone=no, date=no, address=no, email=no"
+    />
 
-    <!-- ============================================================
-         OPEN GRAPH — rich previews when shared on WhatsApp,
-         Facebook, LinkedIn, iMessage, etc.
-         Replace the URLs with your real production domain + image.
-         ============================================================ -->
+    <!-- Open Graph / Twitter (text-only until you have a real domain + image).
+         When ready, add:
+           <meta property="og:url" content="https://YOUR-DOMAIN/" />
+           <meta property="og:image" content="https://YOUR-DOMAIN/og-image.jpg" />
+           <meta name="twitter:image" content="https://YOUR-DOMAIN/og-image.jpg" />
+         and change twitter:card to summary_large_image. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Mehndi Studio" />
     <meta property="og:title" content="Mehndi Studio — Art on Your Hands" />
@@ -69,80 +48,41 @@
       property="og:description"
       content="Explore expressive Mehndi designs across seven distinctive styles. Book appointments and pay securely via UPI."
     />
-    <meta property="og:url" content="https://your-domain.com/" />
-    <meta property="og:image" content="https://your-domain.com/og-image.jpg" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Beautiful Mehndi designs on hands" />
     <meta property="og:locale" content="en_GB" />
-
-    <!-- ============================================================
-         TWITTER CARD — rich previews on X / Twitter
-         ============================================================ -->
-    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="Mehndi Studio — Art on Your Hands" />
     <meta
       name="twitter:description"
       content="Explore expressive Mehndi designs across seven distinctive styles."
     />
-    <meta name="twitter:image" content="https://your-domain.com/og-image.jpg" />
 
-    <!-- ============================================================
-         TITLE
-         ============================================================ -->
-    <title>Mehndi Studio — Art on Your Hands</title>
+    <!-- Favicon: inline SVG, so no file in /public is needed
+         (missing files were being answered with index.html). -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='32' fill='%2324170f'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='34' font-weight='700' text-anchor='middle' fill='%23f1cf8a'%3EM%3C/text%3E%3C/svg%3E"
+    />
 
-    <!-- ============================================================
-         FAVICONS & APP ICONS
-         Replace these with your real assets in /public.
-         The SVG favicon is preferred by modern browsers.
-         ============================================================ -->
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#24170f" />
+    <!-- PWA manifest: intentionally left out until /public/manifest.webmanifest
+         and its icons exist. Then add:
+         <link rel="manifest" href="/manifest.webmanifest" /> -->
 
-    <!-- ============================================================
-         PWA MANIFEST (optional — add /public/manifest.webmanifest)
-         Enables "Add to Home Screen" with a native-app feel.
-         ============================================================ -->
-    <link rel="manifest" href="/manifest.webmanifest" />
-
-    <!-- ============================================================
-         PERFORMANCE HINTS
-         - preconnect: warm up connections to your API + CDNs
-         - dns-prefetch: resolve DNS early for fonts/images
-         Replace URLs with your actual backend + asset hosts.
-         ============================================================ -->
+    <!-- Google Fonts connections (remove these two lines if your CSS doesn't use Google Fonts) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="preconnect" href="https://images.unsplash.com" />
-    <link rel="dns-prefetch" href="https://images.unsplash.com" />
 
-    <!-- Optional: preconnect to your API for faster first request -->
-    <!-- <link rel="preconnect" href="https://api.your-domain.com" crossorigin /> -->
+    <!-- Optional: warm up the connection to your backend (set your real API URL) -->
+    <!-- <link rel="preconnect" href="https://YOUR-API-HOST" crossorigin /> -->
 
-    <!-- ============================================================
-         INLINE CRITICAL CSS — prevents white flash before Tailwind
-         loads. Keep this extremely small.
-         ============================================================ -->
+    <!-- Tiny critical CSS to avoid a white flash before Tailwind loads -->
     <style>
-      /* Base page shell — matches app's background so there's no flash */
       html,
       body {
         margin: 0;
         background: #fbf8f2;
         color: #2a1a12;
       }
-      /* Hide the initial app shell until React mounts, prevents FOUC */
-      #root:empty::before {
-        content: "";
-        position: fixed;
-        inset: 0;
-        background: #fbf8f2;
-      }
-      /* Reduced-motion friendly scroll */
       @media (prefers-reduced-motion: no-preference) {
         html {
           scroll-behavior: smooth;
@@ -152,9 +92,6 @@
   </head>
 
   <body>
-    <!-- ============================================================
-         NOSCRIPT FALLBACK — shown when JS is disabled
-         ============================================================ -->
     <noscript>
       <div
         style="
@@ -186,14 +123,8 @@
       </div>
     </noscript>
 
-    <!-- ============================================================
-         APP ROOT
-         ============================================================ -->
     <div id="root"></div>
 
-    <!-- ============================================================
-         ENTRY SCRIPT
-         ============================================================ -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X, Calendar, Clock, FileText, Loader2, CheckCircle2 } from "lucide-react";
 import { api } from "../lib/api";
+import { currency } from "../lib/format";
 
 export default function BookingModal({ cart, total, onClose, onSuccess }) {
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -63,7 +64,7 @@ export default function BookingModal({ cart, total, onClose, onSuccess }) {
                     <p className="mt-1 pr-10 text-xs text-[#d9c9b8] sm:text-sm">
                         {done
                             ? "The admin will confirm shortly."
-                            : `${cart.length} design${cart.length > 1 ? "s" : ""} · ${total}`}
+                            : `${cart.length} design${cart.length > 1 ? "s" : ""} · ${currency(total)}`}
                     </p>
                 </div>
 

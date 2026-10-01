@@ -3,22 +3,25 @@ import {
     X, Calendar, Clock, Loader2, CheckCircle2, XCircle, Hourglass, CreditCard,
     ShieldAlert, AlertCircle, Maximize2, Sparkles, PartyPopper, Lock,
 } from "lucide-react";
-import { api, API_BASE } from "../lib/api";
+// import { api, API_BASE } from "../lib/api";
 
-function currency(value) {
-    return new Intl.NumberFormat("en-GB", {
-        style: "currency",
-        currency: "GBP",
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    }).format(value || 0);
-}
+// function currency(value) {
+//     return new Intl.NumberFormat("en-GB", {
+//         style: "currency",
+//         currency: "GBP",
+//         minimumFractionDigits: 2,
+//         maximumFractionDigits: 2,
+//     }).format(value || 0);
+// }
 
-function imageUrl(src) {
-    if (!src) return "";
-    if (src.startsWith("http://") || src.startsWith("https://")) return src;
-    return `${API_BASE}${src}`;
-}
+// function imageUrl(src) {
+//     if (!src) return "";
+//     if (src.startsWith("http://") || src.startsWith("https://")) return src;
+//     return `${API_BASE}${src}`;
+// }
+import { api } from "../lib/api";
+import { imageUrl, currency } from "../lib/format";
+import SafeImage from "../components/SafeImage";
 
 function formatDuration(seconds) {
     if (!seconds || seconds < 60) return `${seconds || 0}s`;
@@ -44,8 +47,9 @@ export default function MyOrdersModal({ onClose, onPay }) {
     const [error, setError] = useState("");
     const [lightbox, setLightbox] = useState(null);   // { src, alt }
 
-    const load = () => {
-        setLoading(true); setError("");
+    const load = (silent = false) => {
+        if (!silent) setLoading(true);
+        setError("");
         api.get("/api/orders")
             .then(({ data }) => setOrders(Array.isArray(data) ? data : []))
             .catch((err) => setError(err.response?.data?.message || "Could not load orders"))

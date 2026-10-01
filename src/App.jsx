@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
-  ArrowRight, Check, ChevronRight, CircleX, Heart, ImagePlus, Menu, Minus,
-  Plus, Search, ShoppingBag, Sparkles, Star, Trash2, Upload, User, X, LogOut,
-  Loader2, ExternalLink,
+  ArrowRight, Menu, Minus, Plus, ShoppingBag, Sparkles, Star, Trash2,
+  User, X, LogOut, ExternalLink,
 } from "lucide-react";
 import { io } from "socket.io-client";
 
@@ -13,16 +12,13 @@ import AccountModal from "./pages/AccountModal";
 import BookingModal from "./pages/BookingModal";
 import MyOrdersModal from "./pages/MyOrdersModal";
 import PaymentModal from "./pages/PaymentModal";
-import { api } from "./lib/api";
+import { api, API_BASE } from "./lib/api";
 import { playNotificationSound, primeAudioOnFirstGesture } from "./lib/notify";
+import { imageUrl, currency } from "./lib/format";
+import SafeImage from "./components/SafeImage";
+import Catalog from "./components/Catalog";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
-
-function imageUrl(src) {
-  if (!src) return "";
-  if (src.startsWith("http://") || src.startsWith("https://")) return src;
-  return `${API}${src}`;
-}
+const API = API_BASE;
 
 const seedCategories = [
   { id: "arabic", name: "Arabic Mehndi", shortName: "Arabic", description: "Bold floral trails, statement motifs and elegant negative space.", accent: "Warm & graceful" },
@@ -33,25 +29,6 @@ const seedCategories = [
   { id: "minimal-modern", name: "Minimal / Modern", shortName: "Modern", description: "Clean lines, small focal motifs and contemporary negative space.", accent: "Clean & modern" },
   { id: "bridal", name: "Bridal Mehndi", shortName: "Bridal", description: "Full, luxurious compositions for weddings, celebrations and bridal moments.", accent: "Grand & timeless" }
 ];
-
-// const demoImages = {
-//   arabic: "https://images.unsplash.com/photo-1594736797933-d0f06ba4a3a5?auto=format&fit=crop&w=900&q=80",
-//   indian: "https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&w=900&q=80",
-//   pakistani: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=900&q=80",
-//   moroccan: "https://images.unsplash.com/photo-1518895949257-7621c3c786d7?auto=format&fit=crop&w=900&q=80",
-//   "indo-arabic": "https://images.unsplash.com/photo-1531058020387-3be344556be6?auto=format&fit=crop&w=900&q=80",
-//   "minimal-modern": "https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?auto=format&fit=crop&w=900&q=80",
-//   bridal: "https://images.unsplash.com/photo-1519225421980-715cb0215aed?auto=format&fit=crop&w=900&q=80"
-// };
-
-function currency(value) {
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value || 0);
-}
 
 /* =========================================================
    ROOT APP
@@ -95,16 +72,15 @@ function App() {
 
 /* =========================================================
    PUBLIC SITE
+   (designs are loaded page by page inside <Catalog />)
    ========================================================= */
 function PublicCatalog() {
   const [categories, setCategories] = useState(seedCategories);
-  const [designs, setDesigns] = useState([]);
   const [activeCategory, setActiveCategory] = useState("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   const [user, setUser] = useState(null);
   const [authOpen, setAuthOpen] = useState(false);
@@ -125,6 +101,13 @@ function PublicCatalog() {
     api.get("/api/users/me")
       .then(({ data }) => setUser(data.user))
       .catch(() => localStorage.removeItem("mehndi-user-token"));
+  }, []);
+
+  /* categories */
+  useEffect(() => {
+    api.get("/api/categories")
+      .then(({ data }) => { if (Array.isArray(data) && data.length) setCategories(data); })
+      .catch(() => { /* keep seed categories */ });
   }, []);
 
   /* load cart when user changes */
@@ -165,31 +148,6 @@ function PublicCatalog() {
 
     return () => socket.disconnect();
   }, [user?.id]);
-
-  /* load catalog */
-  const load = async () => {
-    try {
-      const [cRes, dRes] = await Promise.all([
-        fetch(`${API}/api/categories`),
-        fetch(`${API}/api/designs`)
-      ]);
-      if (cRes.ok) setCategories(await cRes.json());
-      if (dRes.ok) setDesigns(await dRes.json());
-    } catch { /* silent */ }
-    finally { setLoading(false); }
-  };
-
-  useEffect(() => { load(); }, []);
-
-  const filtered = useMemo(() => {
-    let list = designs;
-    if (activeCategory !== "all") list = list.filter(d => d.categoryId === activeCategory);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(d => `${d.name} ${d.description} ${d.categoryName}`.toLowerCase().includes(q));
-    }
-    return list;
-  }, [designs, activeCategory, search]);
 
   /* cart ops */
   const doAddToCart = (design) => {
@@ -254,7 +212,7 @@ function PublicCatalog() {
     <div className="min-h-screen bg-[#fbf8f2] text-[#2a1a12]">
       <Header
         count={cartCount}
-        onCart={() => setCartOpen(true)}
+        onCart={() => (user ? setCartOpen(true) : setAuthOpen(true))}
         onMenu={() => setMobileMenu(!mobileMenu)}
         user={user}
         onSignIn={() => setAuthOpen(true)}
@@ -280,12 +238,10 @@ function PublicCatalog() {
         <CategoryRail categories={categories} active={activeCategory} setActive={setActiveCategory} />
         <Catalog
           categories={categories}
-          designs={filtered}
           activeCategory={activeCategory}
           setActiveCategory={setActiveCategory}
           search={search}
           setSearch={setSearch}
-          loading={loading}
           onSelect={setSelected}
           onAdmin={() => { window.location.href = "/admin"; }}
         />
@@ -515,362 +471,8 @@ function CategoryRail({ categories, active, setActive }) {
 }
 
 /* =========================================================
-   CATALOG — with infinite scroll + smart search
+   DESIGN MODAL
    ========================================================= */
-const PAGE_SIZE = 10;
-
-function Catalog({ categories, designs, activeCategory, setActiveCategory, search, setSearch, loading, onSelect, onAdmin }) {
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  const sentinelRef = useRef(null);
-
-  const isFiltering = search.trim().length > 0 || activeCategory !== "all";
-  const visibleDesigns = designs.slice(0, visibleCount);
-  const hasMore = visibleCount < designs.length;
-
-  /* Reset pagination when the filter changes */
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [activeCategory, search]);
-
-  /* Infinite scroll observer */
-  useEffect(() => {
-    if (!isFiltering || !hasMore || loading) return;
-    const el = sentinelRef.current;
-    if (!el) return;
-
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          setVisibleCount(c => Math.min(c + PAGE_SIZE, designs.length));
-        }
-      },
-      { rootMargin: "400px 0px" }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [isFiltering, hasMore, loading, designs.length]);
-
-  return <section id="catalog" className="mx-auto max-w-7xl px-5 py-16 lg:px-8 lg:py-24">
-    <div className="flex flex-col justify-between gap-7 md:flex-row md:items-end">
-      <div>
-        <p className="text-xs font-bold uppercase tracking-[.25em] text-[#9b6d43]">The collection</p>
-        <h2 className="serif mt-2 text-4xl font-semibold tracking-tight sm:text-5xl">Find your signature style.</h2>
-      </div>
-
-      <SearchBox
-        value={search}
-        onChange={setSearch}
-        designs={designs.length ? designs : []}
-        categories={categories}
-        onPickCategory={setActiveCategory}
-        onPickDesign={onSelect}
-      />
-    </div>
-
-    <div className="mt-12">
-      {activeCategory === "all" && !search && <CategoryShowcase categories={categories} designs={designs} setActiveCategory={setActiveCategory} />}
-
-      {activeCategory !== "all" && !search && <div className="mb-8 rounded-3xl border border-[#eadfce] bg-[#fffdf9] p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-xs font-bold uppercase tracking-[.22em] text-[#9b6d43]">Style</div>
-            <h3 className="serif mt-1 text-3xl">{categories.find(c => c.id === activeCategory)?.name}</h3>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#715e4e]">{categories.find(c => c.id === activeCategory)?.description}</p>
-          </div>
-          <div className="rounded-full bg-[#f0e3d3] px-3 py-1 text-xs font-semibold">{designs.length} designs</div>
-        </div>
-      </div>}
-
-      {isFiltering && (
-        <>
-          <DesignGrid designs={visibleDesigns} loading={loading} onSelect={onSelect} />
-
-          {/* Loading-more sentinel */}
-          {!loading && hasMore && (
-            <div ref={sentinelRef} className="mt-12 flex flex-col items-center gap-2 text-[#8a6d53]">
-              <Loader2 size={22} className="animate-spin" />
-              <span className="text-xs">Loading more designs…</span>
-            </div>
-          )}
-
-          {/* End of list */}
-          {!loading && !hasMore && designs.length > PAGE_SIZE && (
-            <div className="mt-12 text-center text-xs text-[#8a6d53]">
-              You've seen all <strong>{designs.length}</strong> designs
-            </div>
-          )}
-        </>
-      )}
-
-      {activeCategory === "all" && !search && <div className="mt-16">
-        <div className="mb-7 flex items-end justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[.22em] text-[#9b6d43]">Featured</p>
-            <h3 className="serif mt-1 text-3xl">A few favourites to begin.</h3>
-          </div>
-          <button onClick={() => setActiveCategory("arabic")} className="hidden items-center gap-1 text-sm font-semibold text-[#7d3f24] sm:flex">
-            Browse styles <ChevronRight size={16} />
-          </button>
-        </div>
-        <DesignGrid designs={designs.slice(0, 6)} loading={loading} onSelect={onSelect} />
-      </div>}
-
-      {!loading && designs.length === 0 && <EmptyState search={search} onAdmin={onAdmin} />}
-    </div>
-  </section>;
-}
-
-/* =========================================================
-   SMART SEARCH BOX — debounced, live suggestions
-   ========================================================= */
-function SearchBox({ value, onChange, designs, categories, onPickCategory, onPickDesign }) {
-  const [input, setInput] = useState(value || "");
-  const [open, setOpen] = useState(false);
-  const [debounced, setDebounced] = useState(value || "");
-  const boxRef = useRef(null);
-
-  /* Debounce input → call parent + update local filter */
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setDebounced(input);
-      onChange(input);
-    }, 250);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input]);
-
-  /* Close on outside click */
-  useEffect(() => {
-    const handler = (e) => {
-      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  /* Close on Esc */
-  useEffect(() => {
-    const handler = (e) => { if (e.key === "Escape") setOpen(false); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
-
-  const q = debounced.trim().toLowerCase();
-
-  const matchedCategories = q
-    ? categories
-      .filter(c =>
-        c.name.toLowerCase().includes(q) ||
-        c.shortName.toLowerCase().includes(q) ||
-        c.description.toLowerCase().includes(q)
-      )
-      .slice(0, 3)
-    : [];
-
-  const matchedDesigns = q
-    ? designs
-      .filter(d =>
-        `${d.name} ${d.description} ${d.categoryName}`.toLowerCase().includes(q)
-      )
-      .slice(0, 5)
-    : [];
-
-  const hasResults = matchedCategories.length > 0 || matchedDesigns.length > 0;
-
-  const clearAll = () => {
-    setInput("");
-    setDebounced("");
-    onChange("");
-    setOpen(false);
-  };
-
-  return (
-    <div ref={boxRef} className="relative w-full md:max-w-md">
-      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#a38b74]" size={18} />
-      <input
-        value={input}
-        onChange={e => { setInput(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        placeholder="Search designs, categories…"
-        className="w-full rounded-full border border-[#ded0bc] bg-white py-3.5 pl-11 pr-24 text-sm outline-none ring-[#9b5d32] transition focus:ring-2"
-      />
-
-      {/* Clear button */}
-      {input && (
-        <button
-          onClick={clearAll}
-          className="absolute right-14 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-[#8a6d53] hover:bg-[#f1e6d8]"
-          title="Clear search"
-        >
-          <X size={14} />
-        </button>
-      )}
-
-      {/* Design count chip */}
-      <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-[#f1cf8a]/40 px-2 py-0.5 text-[10px] font-bold text-[#7d3f24]">
-        {designs.length}
-      </div>
-
-      {/* Suggestions dropdown */}
-      {open && q && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-96 overflow-auto rounded-2xl border border-[#eadfce] bg-white p-2 shadow-2xl">
-          {!hasResults ? (
-            <div className="py-8 text-center text-sm text-[#8a6d53]">
-              <div className="serif text-lg">No matches for "{input}"</div>
-              <div className="mt-1 text-xs">Try a different keyword</div>
-            </div>
-          ) : (
-            <>
-              {matchedCategories.length > 0 && (
-                <div className="mb-1">
-                  <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.16em] text-[#8a6d53]">
-                    Categories
-                  </div>
-                  {matchedCategories.map(c => (
-                    <button
-                      key={c.id}
-                      onClick={() => { onPickCategory(c.id); setOpen(false); }}
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition hover:bg-[#faf5ed]"
-                    >
-                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#f1cf8a]/40 text-[10px] font-bold text-[#7d3f24]">
-                        {c.shortName.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-semibold">{c.name}</div>
-                        <div className="truncate text-xs text-[#8a6d53]">{c.accent}</div>
-                      </div>
-                      <ChevronRight size={14} className="text-[#a38b74]" />
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {matchedDesigns.length > 0 && (
-                <div>
-                  <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.16em] text-[#8a6d53]">
-                    Designs
-                  </div>
-                  {matchedDesigns.map(d => (
-                    <button
-                      key={d.id}
-                      onClick={() => { onPickDesign(d); setOpen(false); }}
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition hover:bg-[#faf5ed]"
-                    >
-                      <img
-                        src={imageUrl(d.image)}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                        className="h-10 w-10 shrink-0 rounded-lg object-cover"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-semibold">{d.name}</div>
-                        <div className="truncate text-xs text-[#8a6d53]">
-                          {d.categoryName} · {currency(d.price)}
-                        </div>
-                      </div>
-                      <ArrowRight size={14} className="text-[#a38b74]" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CategoryShowcase({ categories, designs, setActiveCategory }) {
-  return <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-    {categories.map((c, i) => {
-      const d = designs.find(x => x.categoryId === c.id);
-      return <button key={c.id} onClick={() => setActiveCategory(c.id)} className={`group relative overflow-hidden rounded-[28px] border border-[#eadfce] bg-[#efe2d2] text-left ${i === 0 ? "lg:col-span-2 lg:row-span-2" : ""}`}>
-        <div className={`aspect-[4/3] ${i === 0 ? "lg:aspect-auto lg:h-full lg:min-h-[450px]" : ""}`}>
-          {d ? (
-            <img
-              src={imageUrl(d.image)}
-              alt={d.name}
-              loading="lazy"
-              decoding="async"
-              className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
-            />
-          ) : (
-            <div className="h-full w-full bg-gradient-to-br from-[#eadac7] to-[#d1b595]" />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-[#1f130d]/85 via-[#1f130d]/15 to-transparent" />
-          <div className="absolute bottom-0 p-6 text-white">
-            <div className="text-[10px] uppercase tracking-[.24em] text-[#f0d5a4]">{c.accent}</div>
-            <div className="serif mt-1 text-2xl font-semibold">{c.name}</div>
-            <div className="mt-2 max-w-sm text-xs leading-5 text-white/75">{c.description}</div>
-            <div className="mt-4 inline-flex items-center gap-1 text-xs font-bold">Explore <ArrowRight size={14} /></div>
-          </div>
-        </div>
-      </button>;
-    })}
-  </div>;
-}
-
-function DesignGrid({ designs, loading, onSelect }) {
-  if (loading) {
-    return (
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="aspect-[4/5] animate-pulse rounded-3xl bg-[#eee3d4]" />
-        ))}
-      </div>
-    );
-  }
-  return (
-    <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">
-      {designs.map(d => <DesignCard key={d.id} design={d} onSelect={onSelect} />)}
-    </div>
-  );
-}
-
-function DesignCard({ design, onSelect, priority = false }) {
-  return <article className="group">
-    <button onClick={() => onSelect(design)} className="relative block w-full overflow-hidden rounded-[24px] bg-[#eadcc9] text-left shadow-sm">
-      <div className="aspect-[4/5]">
-        <img
-          src={imageUrl(design.image)}
-          alt={design.name}
-          loading={priority ? "eager" : "lazy"}
-          decoding="async"
-          onError={(e) => {
-            if (!e.currentTarget.dataset.retried) {
-              e.currentTarget.dataset.retried = "1";
-              const src = imageUrl(design.image);
-              setTimeout(() => { e.currentTarget.src = `${src}?r=${Date.now()}`; }, 800);
-            }
-          }}
-          className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
-        />
-      </div>
-      <div className="absolute inset-x-3 top-3 flex justify-between">
-        {design.featured && <span className="rounded-full bg-white/90 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[.16em]">Featured</span>}
-        <span className="ml-auto rounded-full bg-[#24170f]/80 px-2.5 py-1 text-[9px] font-bold text-white">{currency(design.price)}</span>
-      </div>
-    </button>
-    <div className="px-1 pt-3">
-      <div className="text-[10px] font-bold uppercase tracking-[.16em] text-[#9a7352]">{design.categoryName}</div>
-      <h3 className="mt-1 font-semibold">{design.name}</h3>
-      <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#806b58]">{design.description || "A beautifully composed Mehndi design."}</p>
-      <button onClick={() => onSelect(design)} className="mt-3 text-xs font-bold text-[#7d3f24]">View design →</button>
-    </div>
-  </article>;
-}
-
-function EmptyState({ search, onAdmin }) {
-  return <div className="rounded-3xl border border-dashed border-[#d9c7b0] bg-[#fffdf9] px-6 py-16 text-center">
-    <ImagePlus className="mx-auto text-[#9b7656]" size={34} />
-    <h3 className="serif mt-4 text-2xl">{search ? "No matching designs yet" : "Your collection is ready for its first design"}</h3>
-    <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#806b58]">Add your actual Mehndi images, descriptions and prices from the admin panel.</p>
-    <button onClick={onAdmin} className="mt-5 rounded-full bg-[#24170f] px-5 py-3 text-sm font-semibold text-white">Add a design</button>
-  </div>;
-}
-
 function DesignModal({ design, onClose, onAdd }) {
   return (
     <div
@@ -895,20 +497,17 @@ function DesignModal({ design, onClose, onAdd }) {
             md:w-1/2 md:p-4
           "
         >
-          <img
+          <SafeImage
             src={imageUrl(design.image)}
             alt={design.name}
-            className="
-              block h-auto w-auto max-w-full
-              rounded-xl object-contain
-              max-h-[40dvh] sm:max-h-[46dvh] md:max-h-[84dvh]
-            "
+            eager
+            fallbackClassName="h-56 w-56 rounded-xl"
+            className="block h-auto w-auto max-w-full rounded-xl object-contain max-h-[40dvh] sm:max-h-[46dvh] md:max-h-[84dvh]"
           />
         </div>
 
         {/* ============ CONTENT ============ */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-5 sm:p-7 md:w-1/2 md:p-8">
-          {/* close */}
           <div className="flex shrink-0 justify-end">
             <button
               onClick={onClose}
@@ -919,7 +518,6 @@ function DesignModal({ design, onClose, onAdd }) {
             </button>
           </div>
 
-          {/* details (scrolls if the screen is short) */}
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
             <div className="mt-1 text-[10px] font-bold uppercase tracking-[.2em] text-[#9a7352] sm:text-xs">
               {design.categoryName}
@@ -949,7 +547,6 @@ function DesignModal({ design, onClose, onAdd }) {
             </div>
           </div>
 
-          {/* button always visible */}
           <div className="shrink-0 border-t border-[#eadcc9] bg-[#fffdf9] pt-4 sm:pt-5">
             <button
               onClick={() => onAdd(design)}
@@ -970,6 +567,7 @@ function DesignModal({ design, onClose, onAdd }) {
     </div>
   );
 }
+
 /* =========================================================
    CART DRAWER
    ========================================================= */
@@ -1055,12 +653,10 @@ function CartDrawer({
                       />
                     </label>
 
-                    <img
-                      src={imageUrl(item.image)}
-                      loading="lazy"
-                      decoding="async"
-                      className="h-24 w-20 rounded-xl object-cover"
+                    <SafeImage
+                      src={imageUrl(item.image, "thumb")}
                       alt=""
+                      className="h-24 w-20 rounded-xl object-cover"
                     />
 
                     <div className="min-w-0 flex-1">
@@ -1155,7 +751,6 @@ function Story() {
 function Footer() {
   return (
     <footer className="relative overflow-hidden bg-[#1b100b] px-5 pt-12 pb-8 text-center text-xs text-[#aa9480]">
-      {/* Subtle dot pattern */}
       <div
         className="pointer-events-none absolute inset-0 opacity-20"
         style={{
@@ -1168,7 +763,6 @@ function Footer() {
         <div className="serif text-xl text-[#eee0cf]">Mehndi Studio</div>
         <div className="mt-2">A modern catalog for a timeless craft.</div>
 
-        {/* Powered-by badge */}
         <div className="mt-7 flex items-center justify-center gap-3 text-[11px]">
           <span className="text-[#7a6250]">Powered by</span>
           <a
