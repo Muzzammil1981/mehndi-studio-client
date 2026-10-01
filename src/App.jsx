@@ -34,15 +34,15 @@ const seedCategories = [
   { id: "bridal", name: "Bridal Mehndi", shortName: "Bridal", description: "Full, luxurious compositions for weddings, celebrations and bridal moments.", accent: "Grand & timeless" }
 ];
 
-const demoImages = {
-  arabic: "https://images.unsplash.com/photo-1594736797933-d0f06ba4a3a5?auto=format&fit=crop&w=900&q=80",
-  indian: "https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&w=900&q=80",
-  pakistani: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=900&q=80",
-  moroccan: "https://images.unsplash.com/photo-1518895949257-7621c3c786d7?auto=format&fit=crop&w=900&q=80",
-  "indo-arabic": "https://images.unsplash.com/photo-1531058020387-3be344556be6?auto=format&fit=crop&w=900&q=80",
-  "minimal-modern": "https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?auto=format&fit=crop&w=900&q=80",
-  bridal: "https://images.unsplash.com/photo-1519225421980-715cb0215aed?auto=format&fit=crop&w=900&q=80"
-};
+// const demoImages = {
+//   arabic: "https://images.unsplash.com/photo-1594736797933-d0f06ba4a3a5?auto=format&fit=crop&w=900&q=80",
+//   indian: "https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&w=900&q=80",
+//   pakistani: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=900&q=80",
+//   moroccan: "https://images.unsplash.com/photo-1518895949257-7621c3c786d7?auto=format&fit=crop&w=900&q=80",
+//   "indo-arabic": "https://images.unsplash.com/photo-1531058020387-3be344556be6?auto=format&fit=crop&w=900&q=80",
+//   "minimal-modern": "https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?auto=format&fit=crop&w=900&q=80",
+//   bridal: "https://images.unsplash.com/photo-1519225421980-715cb0215aed?auto=format&fit=crop&w=900&q=80"
+// };
 
 function currency(value) {
   return new Intl.NumberFormat("en-GB", {
@@ -788,10 +788,17 @@ function CategoryShowcase({ categories, designs, setActiveCategory }) {
       const d = designs.find(x => x.categoryId === c.id);
       return <button key={c.id} onClick={() => setActiveCategory(c.id)} className={`group relative overflow-hidden rounded-[28px] border border-[#eadfce] bg-[#efe2d2] text-left ${i === 0 ? "lg:col-span-2 lg:row-span-2" : ""}`}>
         <div className={`aspect-[4/3] ${i === 0 ? "lg:aspect-auto lg:h-full lg:min-h-[450px]" : ""}`}>
-          {d
-            ? <img src={imageUrl(d.image)} alt={d.name} className="h-full w-full object-cover transition duration-700 group-hover:scale-105" />
-            : <img src={demoImages[c.id]} alt={c.name} className="h-full w-full object-cover opacity-70 transition duration-700 group-hover:scale-105" />
-          }
+          {d ? (
+            <img
+              src={imageUrl(d.image)}
+              alt={d.name}
+              loading="lazy"
+              decoding="async"
+              className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
+            />
+          ) : (
+            <div className="h-full w-full bg-gradient-to-br from-[#eadac7] to-[#d1b595]" />
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-[#1f130d]/85 via-[#1f130d]/15 to-transparent" />
           <div className="absolute bottom-0 p-6 text-white">
             <div className="text-[10px] uppercase tracking-[.24em] text-[#f0d5a4]">{c.accent}</div>
