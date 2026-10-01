@@ -13,6 +13,9 @@ import AdminDesigns from "./Admindesigns";
 import { imageUrl, currency } from "../lib/format";
 import SafeImage from "../components/SafeImage";
 
+
+
+
 const CATEGORY_OPTIONS = [
     { id: "arabic", name: "Arabic Mehndi" },
     { id: "indian", name: "Indian Mehndi" },
