@@ -822,15 +822,22 @@ function DesignGrid({ designs, loading, onSelect }) {
   );
 }
 
-function DesignCard({ design, onSelect }) {
+function DesignCard({ design, onSelect, priority = false }) {
   return <article className="group">
     <button onClick={() => onSelect(design)} className="relative block w-full overflow-hidden rounded-[24px] bg-[#eadcc9] text-left shadow-sm">
       <div className="aspect-[4/5]">
         <img
           src={imageUrl(design.image)}
           alt={design.name}
-          loading="lazy"
+          loading={priority ? "eager" : "lazy"}
           decoding="async"
+          onError={(e) => {
+            if (!e.currentTarget.dataset.retried) {
+              e.currentTarget.dataset.retried = "1";
+              const src = imageUrl(design.image);
+              setTimeout(() => { e.currentTarget.src = `${src}?r=${Date.now()}`; }, 800);
+            }
+          }}
           className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
         />
       </div>
@@ -858,31 +865,104 @@ function EmptyState({ search, onAdmin }) {
 }
 
 function DesignModal({ design, onClose, onAdd }) {
-  return <div className="fixed inset-0 z-50 grid place-items-center bg-[#20140e]/60 p-4 backdrop-blur-sm" onMouseDown={onClose}>
-    <div onMouseDown={e => e.stopPropagation()} className="grid max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-[30px] bg-[#fffdf9] shadow-2xl md:grid-cols-2">
-      <div className="min-h-[360px] bg-[#eadcc9]">
-        <img src={imageUrl(design.image)} alt={design.name} className="h-full max-h-[620px] w-full object-cover" />
-      </div>
-      <div className="flex flex-col p-7 sm:p-10">
-        <button onClick={onClose} className="ml-auto rounded-full p-2 hover:bg-[#f1e6d8]"><X size={19} /></button>
-        <div className="mt-4 text-xs font-bold uppercase tracking-[.2em] text-[#9a7352]">{design.categoryName}</div>
-        <h2 className="serif mt-2 text-4xl font-semibold">{design.name}</h2>
-        <p className="mt-5 leading-7 text-[#725e4c]">{design.description || "A timeless Mehndi composition created for an elegant finish."}</p>
-        <div className="mt-8 rounded-2xl bg-[#f3e9dc] p-5">
-          <div className="text-xs uppercase tracking-[.15em] text-[#927158]">Price</div>
-          <div className="mt-1 flex items-end gap-2">
-            <span className="serif text-3xl font-bold">{currency(design.price)}</span>
-            <span className="pb-1 text-xs text-[#806b58]">{design.amountType}</span>
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#20140e]/60 p-3 backdrop-blur-sm sm:p-4"
+      onMouseDown={onClose}
+    >
+      <div
+        onMouseDown={(e) => e.stopPropagation()}
+        className="
+          flex w-full flex-col overflow-hidden
+          rounded-[24px] bg-[#fffdf9] shadow-2xl
+          max-h-[94dvh]
+          sm:max-w-xl sm:rounded-[30px]
+          md:max-h-[92dvh] md:max-w-4xl md:flex-row
+        "
+      >
+        {/* ============ IMAGE ============ */}
+        <div
+          className="
+            flex shrink-0 items-center justify-center
+            bg-[#eadcc9] p-2 sm:p-3
+            md:w-1/2 md:p-4
+          "
+        >
+          <img
+            src={imageUrl(design.image)}
+            alt={design.name}
+            className="
+              block h-auto w-auto max-w-full
+              rounded-xl object-contain
+              max-h-[40dvh] sm:max-h-[46dvh] md:max-h-[84dvh]
+            "
+          />
+        </div>
+
+        {/* ============ CONTENT ============ */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-5 sm:p-7 md:w-1/2 md:p-8">
+          {/* close */}
+          <div className="flex shrink-0 justify-end">
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-full p-2 text-[#24170f] transition hover:bg-[#f1e6d8] active:scale-95"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* details (scrolls if the screen is short) */}
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <div className="mt-1 text-[10px] font-bold uppercase tracking-[.2em] text-[#9a7352] sm:text-xs">
+              {design.categoryName}
+            </div>
+
+            <h2 className="serif mt-2 text-3xl font-semibold leading-tight text-[#24170f] sm:text-4xl">
+              {design.name}
+            </h2>
+
+            <p className="mt-4 text-sm leading-6 text-[#725e4c] sm:mt-5 sm:text-base sm:leading-7">
+              {design.description ||
+                "A timeless Mehndi composition created for an elegant finish."}
+            </p>
+
+            <div className="mt-5 rounded-2xl bg-[#f3e9dc] p-4 sm:mt-7 sm:p-5">
+              <div className="text-[10px] uppercase tracking-[.15em] text-[#927158] sm:text-xs">
+                Price
+              </div>
+              <div className="mt-1 flex items-end gap-2">
+                <span className="serif text-2xl font-bold text-[#24170f] sm:text-3xl">
+                  {currency(design.price)}
+                </span>
+                <span className="pb-1 text-[10px] text-[#806b58] sm:text-xs">
+                  {design.amountType}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* button always visible */}
+          <div className="shrink-0 border-t border-[#eadcc9] bg-[#fffdf9] pt-4 sm:pt-5">
+            <button
+              onClick={() => onAdd(design)}
+              className="
+                flex w-full items-center justify-center gap-2
+                rounded-full bg-[#24170f] px-5 py-3.5
+                text-sm font-semibold text-white shadow-lg transition
+                hover:-translate-y-0.5 hover:bg-[#382419]
+                active:scale-[0.99] sm:py-4
+              "
+            >
+              <ShoppingBag size={17} />
+              Add to selection
+            </button>
           </div>
         </div>
-        <button onClick={() => onAdd(design)} className="mt-auto flex items-center justify-center gap-2 rounded-full bg-[#24170f] px-6 py-4 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5">
-          <ShoppingBag size={17} /> Add to selection
-        </button>
       </div>
     </div>
-  </div>;
+  );
 }
-
 /* =========================================================
    CART DRAWER
    ========================================================= */

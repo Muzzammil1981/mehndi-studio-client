@@ -2,13 +2,198 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#24170f" />
-    <meta name="description" content="Discover beautiful Mehndi designs by style, occasion and price." />
+
+    <!-- ============================================================
+         VIEWPORT — critical for responsive design
+         - width=device-width: match CSS px to device-independent px
+         - initial-scale=1: no initial zoom
+         - viewport-fit=cover: allow content behind notches/home indicator
+                             (used with env(safe-area-inset-*) in CSS)
+         - maximum-scale=5: allow pinch-zoom for accessibility
+                             (never use user-scalable=no — it's an a11y violation)
+         ============================================================ -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+
+    <!-- ============================================================
+         THEME COLOR — colors the browser chrome on mobile
+         - media light: warm cream (matches app background)
+         - media dark:  deep brown (matches header)
+         ============================================================ -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbf8f2" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#24170f" />
+
+    <!-- ============================================================
+         PRIMARY META
+         ============================================================ -->
+    <meta
+      name="description"
+      content="Discover beautiful Mehndi designs by style, occasion and price. Book appointments, pay via UPI, and manage your orders — all in one place."
+    />
+    <meta name="author" content="Mehndi Studio" />
+    <meta name="application-name" content="Mehndi Studio" />
+
+    <!-- Keywords (minor SEO value but harmless) -->
+    <meta
+      name="keywords"
+      content="mehndi, henna, bridal mehndi, arabic mehndi, indian mehndi, pakistani mehndi, mehndi designs, mehndi booking"
+    />
+
+    <!-- ============================================================
+         iOS / APPLE SPECIFIC
+         - apple-mobile-web-app-capable: enables standalone mode
+         - status-bar-style: controls the top bar color in standalone
+         - apple-mobile-web-app-title: name shown on home screen
+         ============================================================ -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Mehndi Studio" />
+
+    <!-- Prevent iOS from auto-linking phone numbers/dates/addresses in text -->
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="format-detection" content="date=no" />
+    <meta name="format-detection" content="address=no" />
+    <meta name="format-detection" content="email=no" />
+
+    <!-- ============================================================
+         OPEN GRAPH — rich previews when shared on WhatsApp,
+         Facebook, LinkedIn, iMessage, etc.
+         Replace the URLs with your real production domain + image.
+         ============================================================ -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Mehndi Studio" />
+    <meta property="og:title" content="Mehndi Studio — Art on Your Hands" />
+    <meta
+      property="og:description"
+      content="Explore expressive Mehndi designs across seven distinctive styles. Book appointments and pay securely via UPI."
+    />
+    <meta property="og:url" content="https://your-domain.com/" />
+    <meta property="og:image" content="https://your-domain.com/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Beautiful Mehndi designs on hands" />
+    <meta property="og:locale" content="en_GB" />
+
+    <!-- ============================================================
+         TWITTER CARD — rich previews on X / Twitter
+         ============================================================ -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Mehndi Studio — Art on Your Hands" />
+    <meta
+      name="twitter:description"
+      content="Explore expressive Mehndi designs across seven distinctive styles."
+    />
+    <meta name="twitter:image" content="https://your-domain.com/og-image.jpg" />
+
+    <!-- ============================================================
+         TITLE
+         ============================================================ -->
     <title>Mehndi Studio — Art on Your Hands</title>
+
+    <!-- ============================================================
+         FAVICONS & APP ICONS
+         Replace these with your real assets in /public.
+         The SVG favicon is preferred by modern browsers.
+         ============================================================ -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#24170f" />
+
+    <!-- ============================================================
+         PWA MANIFEST (optional — add /public/manifest.webmanifest)
+         Enables "Add to Home Screen" with a native-app feel.
+         ============================================================ -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- ============================================================
+         PERFORMANCE HINTS
+         - preconnect: warm up connections to your API + CDNs
+         - dns-prefetch: resolve DNS early for fonts/images
+         Replace URLs with your actual backend + asset hosts.
+         ============================================================ -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://images.unsplash.com" />
+    <link rel="dns-prefetch" href="https://images.unsplash.com" />
+
+    <!-- Optional: preconnect to your API for faster first request -->
+    <!-- <link rel="preconnect" href="https://api.your-domain.com" crossorigin /> -->
+
+    <!-- ============================================================
+         INLINE CRITICAL CSS — prevents white flash before Tailwind
+         loads. Keep this extremely small.
+         ============================================================ -->
+    <style>
+      /* Base page shell — matches app's background so there's no flash */
+      html,
+      body {
+        margin: 0;
+        background: #fbf8f2;
+        color: #2a1a12;
+      }
+      /* Hide the initial app shell until React mounts, prevents FOUC */
+      #root:empty::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background: #fbf8f2;
+      }
+      /* Reduced-motion friendly scroll */
+      @media (prefers-reduced-motion: no-preference) {
+        html {
+          scroll-behavior: smooth;
+        }
+      }
+    </style>
   </head>
+
   <body>
+    <!-- ============================================================
+         NOSCRIPT FALLBACK — shown when JS is disabled
+         ============================================================ -->
+    <noscript>
+      <div
+        style="
+          min-height: 100vh;
+          display: grid;
+          place-items: center;
+          padding: 2rem;
+          text-align: center;
+          font-family: Inter, system-ui, sans-serif;
+          background: #fbf8f2;
+          color: #2a1a12;
+        "
+      >
+        <div style="max-width: 32rem">
+          <h1
+            style="
+              font-family: Georgia, 'Times New Roman', serif;
+              font-size: 1.75rem;
+              margin: 0 0 0.75rem;
+            "
+          >
+            Mehndi Studio
+          </h1>
+          <p style="margin: 0; line-height: 1.6; color: #715e4e">
+            This app requires JavaScript to display the design catalog and
+            manage bookings. Please enable JavaScript and reload the page.
+          </p>
+        </div>
+      </div>
+    </noscript>
+
+    <!-- ============================================================
+         APP ROOT
+         ============================================================ -->
     <div id="root"></div>
+
+    <!-- ============================================================
+         ENTRY SCRIPT
+         ============================================================ -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

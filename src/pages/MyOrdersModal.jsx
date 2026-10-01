@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
     X, Calendar, Clock, Loader2, CheckCircle2, XCircle, Hourglass, CreditCard,
-    ShieldAlert, AlertCircle, Maximize2, Sparkles, PartyPopper,
+    ShieldAlert, AlertCircle, Maximize2, Sparkles, PartyPopper, Lock,
 } from "lucide-react";
 import { api, API_BASE } from "../lib/api";
 
@@ -29,7 +29,7 @@ function formatDuration(seconds) {
 }
 
 const STATUS_STYLES = {
-    pending: { icon: <Hourglass size={13} />, label: "Pending approval", cls: "bg-[#f8e4df] text-[#8c392d]" },
+    pending: { icon: <Hourglass size={13} />, label: "Pending approval", cls: "bg-[#fdf3d6] text-[#8a6d1c]" },
     approved: { icon: <CheckCircle2 size={13} />, label: "Awaiting payment", cls: "bg-[#e2f0e5] text-[#1d7a3e]" },
     "awaiting-verification": { icon: <ShieldAlert size={13} />, label: "Pending verification", cls: "bg-[#fdf3d6] text-[#8a6d1c]" },
     rejected: { icon: <XCircle size={13} />, label: "Rejected", cls: "bg-[#f8e4df] text-[#8c392d]" },
@@ -70,21 +70,39 @@ export default function MyOrdersModal({ onClose, onPay }) {
 
     return (
         <>
-            <div className="fixed inset-0 z-[75] grid place-items-center bg-[#20140e]/70 p-4 backdrop-blur-sm" onMouseDown={onClose}>
-                <div onMouseDown={e => e.stopPropagation()}
-                    className="flex h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] bg-[#fffdf9] shadow-2xl">
-
-                    <div className="flex items-center justify-between border-b border-[#eadfce] bg-[#faf5ed] px-6 py-4">
-                        <div>
-                            <div className="text-[10px] uppercase tracking-[.24em] text-[#8a6d53]">Appointments</div>
-                            <div className="serif text-2xl font-semibold">My orders</div>
+            <div
+                className="fixed inset-0 z-[75] flex items-end justify-center bg-[#20140e]/70 backdrop-blur-sm sm:items-center sm:p-4"
+                onMouseDown={onClose}
+            >
+                <div
+                    onMouseDown={e => e.stopPropagation()}
+                    className="flex h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[26px] bg-[#fffdf9] shadow-2xl sm:h-[90vh] sm:rounded-[28px]"
+                >
+                    {/* Header */}
+                    <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#eadfce] bg-[#faf5ed] px-4 py-3.5 sm:px-6 sm:py-4">
+                        <div className="min-w-0">
+                            <div className="text-[10px] uppercase tracking-[.2em] text-[#8a6d53] sm:tracking-[.24em]">
+                                Appointments
+                            </div>
+                            <div className="serif truncate text-xl font-semibold sm:text-2xl">
+                                My orders
+                            </div>
                         </div>
-                        <button onClick={onClose} className="rounded-full p-2 hover:bg-[#f1e6d8]"><X size={18} /></button>
+                        <button
+                            onClick={onClose}
+                            aria-label="Close orders"
+                            className="grid h-10 w-10 shrink-0 place-items-center rounded-full hover:bg-[#f1e6d8] active:bg-[#eadfce]"
+                        >
+                            <X size={18} />
+                        </button>
                     </div>
 
-                    <div className="flex-1 overflow-auto p-5">
+                    {/* Scrollable body */}
+                    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-5">
                         {error && (
-                            <div className="mb-4 rounded-xl bg-[#f8e4df] px-4 py-3 text-sm text-[#8c392d]">{error}</div>
+                            <div className="mb-4 rounded-xl bg-[#f8e4df] px-4 py-3 text-sm text-[#8c392d]">
+                                {error}
+                            </div>
                         )}
 
                         {loading ? (
@@ -93,14 +111,16 @@ export default function MyOrdersModal({ onClose, onPay }) {
                             </div>
                         ) : orders.length === 0 ? (
                             <div className="grid h-full place-items-center text-center text-[#8a6d53]">
-                                <div>
-                                    <Calendar className="mx-auto" size={36} />
-                                    <p className="serif mt-4 text-xl">No appointments yet</p>
-                                    <p className="mt-1 text-sm">Add designs to your cart and request a slot.</p>
+                                <div className="max-w-xs">
+                                    <Calendar className="mx-auto" size={34} />
+                                    <p className="serif mt-4 text-lg sm:text-xl">No appointments yet</p>
+                                    <p className="mt-1 text-xs sm:text-sm">
+                                        Add designs to your cart and request a slot.
+                                    </p>
                                 </div>
                             </div>
                         ) : (
-                            <div className="grid gap-4">
+                            <div className="grid gap-3.5 sm:gap-4">
                                 {orders.map(o => {
                                     const S = STATUS_STYLES[o.status] || STATUS_STYLES.pending;
                                     const d = o.proposedDate || o.requestedDate;
@@ -109,120 +129,158 @@ export default function MyOrdersModal({ onClose, onPay }) {
                                     const isAwaiting = o.status === "awaiting-verification";
                                     const isApproved = o.status === "approved";
                                     const isPaid = o.status === "paid";
-                                    const isRejected = o.status === "rejected";
                                     const isInProgress = o.status === "in-progress";
                                     const isCompleted = o.status === "completed";
                                     const blurThumb = isPending || isAwaiting;
 
                                     return (
-                                        <div key={o.id} className="rounded-2xl border border-[#eadfce] bg-white p-4">
-                                            <div className="flex items-start justify-between gap-4">
-                                                <div>
-                                                    <div className="text-[10px] uppercase tracking-[.18em] text-[#8a6d53]">
+                                        <div key={o.id} className="rounded-2xl border border-[#eadfce] bg-white p-3.5 sm:p-4">
+                                            {/* Order header */}
+                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                                                <div className="min-w-0">
+                                                    <div className="truncate text-[10px] uppercase tracking-[.16em] text-[#8a6d53] sm:tracking-[.18em]">
                                                         Order #{o.id.slice(0, 8)}
                                                     </div>
-                                                    <div className="mt-1 flex items-center gap-2 text-sm">
-                                                        <Calendar size={14} className="text-[#7d3f24]" /> {d}
-                                                        <Clock size={14} className="ml-2 text-[#7d3f24]" /> {t}
+                                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
+                                                        <span className="inline-flex items-center gap-1.5">
+                                                            <Calendar size={13} className="text-[#7d3f24]" /> {d}
+                                                        </span>
+                                                        <span className="inline-flex items-center gap-1.5">
+                                                            <Clock size={13} className="text-[#7d3f24]" /> {t}
+                                                        </span>
                                                         {o.proposedDate && o.proposedDate !== o.requestedDate && (
-                                                            <span className="ml-2 rounded-full bg-[#f4eadc] px-2 py-0.5 text-[10px]">rescheduled</span>
+                                                            <span className="rounded-full bg-[#f4eadc] px-2 py-0.5 text-[10px]">
+                                                                rescheduled
+                                                            </span>
                                                         )}
                                                     </div>
                                                 </div>
-                                                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${S.cls}`}>
+                                                <span
+                                                    className={`inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold sm:text-xs ${S.cls}`}
+                                                >
                                                     {S.icon} {S.label}
                                                 </span>
                                             </div>
 
-                                            {/* Larger thumbnails */}
-                                            <div className="mt-4 flex flex-wrap gap-3">
-                                                {o.items.map((it, idx) => (
-                                                    <button
-                                                        key={idx}
-                                                        type="button"
-                                                        disabled={blurThumb}
-                                                        onClick={() => {
-                                                            if (blurThumb) return;
-                                                            setLightbox({ src: imageUrl(it.image), alt: it.name });
-                                                        }}
-                                                        className={`group relative h-32 w-28 overflow-hidden rounded-2xl border border-[#eadfce] bg-[#eadcc9] transition ${blurThumb
-                                                            ? "cursor-not-allowed"
-                                                            : "cursor-zoom-in hover:ring-2 hover:ring-[#7d3f24]"
-                                                            }`}
-                                                        title={blurThumb ? "Revealed after studio confirms" : `Click to view ${it.name}`}
-                                                    >
-                                                        <img
-                                                            src={imageUrl(it.image)}
-                                                            alt={it.name}
-                                                            className={`h-full w-full object-cover transition duration-500 ${blurThumb ? "scale-110 blur-[8px]" : ""}`}
-                                                        />
-
-                                                        {isPending && (
-                                                            <div className="absolute inset-0 grid place-items-center bg-[#8c392d]/60">
-                                                                <Hourglass size={22} className="text-white" />
+                                            {/* Thumbnails — smaller on mobile */}
+                                            {/* Thumbnails */}
+                                            <div className="mt-3 flex flex-wrap gap-2.5 sm:mt-4 sm:gap-3">
+                                                {o.items.map((it, idx) =>
+                                                    blurThumb ? (
+                                                        /* Locked placeholder: the real image is never requested */
+                                                        <div
+                                                            key={idx}
+                                                            title="Revealed after studio confirms"
+                                                            className="relative grid h-24 w-20 place-items-center overflow-hidden rounded-xl border border-[#e6d3bd] bg-gradient-to-br from-[#f3e6d5] via-[#ead7bf] to-[#dcc3a3] sm:h-32 sm:w-28 sm:rounded-2xl"
+                                                        >
+                                                            <div
+                                                                className="absolute inset-0 opacity-40"
+                                                                style={{
+                                                                    backgroundImage: "radial-gradient(#9b6d43 1px, transparent 1px)",
+                                                                    backgroundSize: "10px 10px",
+                                                                }}
+                                                            />
+                                                            <div className="relative flex flex-col items-center gap-1.5 px-1 text-center">
+                                                                <div className="grid h-9 w-9 place-items-center rounded-full bg-white/85 shadow sm:h-10 sm:w-10">
+                                                                    {isPending
+                                                                        ? <Lock size={16} className="text-[#7d3f24]" />
+                                                                        : <ShieldAlert size={16} className="text-[#8a6d1c]" />}
+                                                                </div>
+                                                                <span className="line-clamp-2 text-[9px] font-semibold leading-tight text-[#7d3f24] sm:text-[10px]">
+                                                                    {it.name}
+                                                                </span>
                                                             </div>
-                                                        )}
-
-                                                        {isAwaiting && (
-                                                            <div className="absolute inset-0 grid place-items-center bg-[#8a6d1c]/60">
-                                                                <ShieldAlert size={22} className="text-white" />
-                                                            </div>
-                                                        )}
-
-                                                        {!blurThumb && (
-                                                            <div className="absolute inset-0 flex flex-col items-center justify-end bg-gradient-to-t from-black/70 to-transparent pb-2 opacity-0 transition group-hover:opacity-100">
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            key={idx}
+                                                            type="button"
+                                                            onClick={() => setLightbox({ src: imageUrl(it.image), alt: it.name })}
+                                                            className="group relative h-24 w-20 cursor-zoom-in overflow-hidden rounded-xl border border-[#eadfce] bg-[#eadcc9] transition hover:ring-2 hover:ring-[#7d3f24] sm:h-32 sm:w-28 sm:rounded-2xl"
+                                                            title={`Click to view ${it.name}`}
+                                                        >
+                                                            <img
+                                                                src={imageUrl(it.image)}
+                                                                alt={it.name}
+                                                                loading="lazy"
+                                                                decoding="async"
+                                                                className="h-full w-full object-cover"
+                                                            />
+                                                            <div className="absolute inset-0 hidden flex-col items-center justify-end bg-gradient-to-t from-black/70 to-transparent pb-2 opacity-0 transition group-hover:opacity-100 sm:flex">
                                                                 <Maximize2 size={14} className="text-white" />
                                                                 <span className="mt-0.5 text-[10px] font-semibold text-white">Enlarge</span>
                                                             </div>
-                                                        )}
-                                                    </button>
-                                                ))}
+                                                        </button>
+                                                    )
+                                                )}
                                             </div>
 
                                             {isPending && (
-                                                <div className="mt-3 rounded-xl bg-[#f8e4df] px-3 py-2 text-[11px] font-semibold text-[#8c392d]">
-                                                    Awaiting admin approval — designs revealed once confirmed.
+                                                <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#f0d9b5] bg-[#fff6e6] px-3 py-2.5 text-[11px] font-semibold leading-5 text-[#8a5a1c]">
+                                                    <Hourglass size={14} className="mt-0.5 shrink-0" />
+                                                    <span>Awaiting admin approval — designs revealed once confirmed.</span>
                                                 </div>
                                             )}
                                             {isAwaiting && (
-                                                <div className="mt-3 rounded-xl bg-[#fdf3d6] px-3 py-2 text-[11px] font-semibold text-[#8a6d1c]">
-                                                    Payment submitted (UTR: <span className="font-mono">{o.utr}</span>). Awaiting studio verification.
+                                                <div className="mt-3 break-words rounded-xl bg-[#fdf3d6] px-3 py-2 text-[11px] font-semibold text-[#8a6d1c]">
+                                                    Payment submitted (UTR:{" "}
+                                                    <span className="font-mono">{o.utr}</span>). Awaiting studio
+                                                    verification.
                                                 </div>
                                             )}
 
                                             {/* LIVE TIMER when the artist is working */}
                                             {isInProgress && <LiveTimer startedAt={o.startedAt} />}
 
-                                            {/* BEAUTIFUL READY MESSAGE when completed */}
+                                            {/* READY MESSAGE when completed */}
                                             {isCompleted && (
-                                                <div className="mt-3 overflow-hidden rounded-2xl border border-[#c8e6d2] bg-gradient-to-br from-[#eaf7ee] via-[#f4fbf6] to-[#f8fdf9] p-5">
-                                                    <div className="flex items-start gap-4">
-                                                        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#1d7a3e] text-white shadow-lg shadow-[#1d7a3e]/30">
-                                                            <CheckCircle2 size={24} />
+                                                <div className="mt-3 overflow-hidden rounded-2xl border border-[#c8e6d2] bg-gradient-to-br from-[#eaf7ee] via-[#f4fbf6] to-[#f8fdf9] p-4 sm:p-5">
+                                                    <div className="flex items-start gap-3 sm:gap-4">
+                                                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#1d7a3e] text-white shadow-lg shadow-[#1d7a3e]/30 sm:h-12 sm:w-12">
+                                                            <CheckCircle2 size={20} className="sm:hidden" />
+                                                            <CheckCircle2 size={24} className="hidden sm:block" />
                                                         </div>
                                                         <div className="min-w-0 flex-1">
-                                                            <div className="serif text-xl font-semibold text-[#1d7a3e]">
+                                                            <div className="serif text-lg font-semibold text-[#1d7a3e] sm:text-xl">
                                                                 Your Mehndi is ready! 🎨
                                                             </div>
-                                                            <p className="mt-1.5 text-sm leading-6 text-[#3d5c47]">
-                                                                Thank you for choosing <strong>Mehndi Studio</strong> — it was a joy creating this for you.
+                                                            <p className="mt-1.5 text-xs leading-5 text-[#3d5c47] sm:text-sm sm:leading-6">
+                                                                Thank you for choosing{" "}
+                                                                <strong>Mehndi Studio</strong> — it was a joy
+                                                                creating this for you.
                                                                 {o.durationSeconds ? (
-                                                                    <> Total time: <strong>{formatDuration(o.durationSeconds)}</strong>.</>
+                                                                    <>
+                                                                        {" "}
+                                                                        Total time:{" "}
+                                                                        <strong>
+                                                                            {formatDuration(o.durationSeconds)}
+                                                                        </strong>
+                                                                        .
+                                                                    </>
                                                                 ) : null}
                                                             </p>
-                                                            <p className="mt-2 flex items-center gap-1.5 text-xs italic text-[#4a7a5c]">
-                                                                <PartyPopper size={13} /> We can't wait to welcome you back. ✨
+                                                            <p className="mt-2 flex items-center gap-1.5 text-[11px] italic text-[#4a7a5c] sm:text-xs">
+                                                                <PartyPopper size={12} className="shrink-0" />
+                                                                We can't wait to welcome you back. ✨
                                                             </p>
                                                         </div>
                                                     </div>
                                                 </div>
                                             )}
 
-                                            <div className="mt-4 grid gap-1 border-t border-[#f0e6d8] pt-3 text-sm">
+                                            {/* Item list */}
+                                            <div className="mt-3 grid gap-1 border-t border-[#f0e6d8] pt-3 text-xs sm:mt-4 sm:text-sm">
                                                 {o.items.map((it, idx) => (
-                                                    <div key={idx} className="flex justify-between text-[#715e4e]">
-                                                        <span>{it.qty}× {it.name}</span>
-                                                        <span>{currency(it.price * it.qty)}</span>
+                                                    <div
+                                                        key={idx}
+                                                        className="flex justify-between gap-3 text-[#715e4e]"
+                                                    >
+                                                        <span className="min-w-0 truncate">
+                                                            {it.qty}× {it.name}
+                                                        </span>
+                                                        <span className="shrink-0">
+                                                            {currency(it.price * it.qty)}
+                                                        </span>
                                                     </div>
                                                 ))}
                                                 <div className="mt-2 flex justify-between font-semibold">
@@ -234,28 +292,34 @@ export default function MyOrdersModal({ onClose, onPay }) {
                                             {o.paymentRejectReason && (
                                                 <div className="mt-3 flex items-start gap-2 rounded-xl bg-[#f8e4df] px-3 py-2 text-xs text-[#8c392d]">
                                                     <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                                                    <div>
-                                                        <strong>Payment not received:</strong> {o.paymentRejectReason}
+                                                    <div className="min-w-0 break-words">
+                                                        <strong>Payment not received:</strong>{" "}
+                                                        {o.paymentRejectReason}
                                                     </div>
                                                 </div>
                                             )}
 
                                             {o.adminNote && (
-                                                <div className="mt-3 rounded-xl bg-[#f5ecdf] px-3 py-2 text-xs text-[#5b4636]">
+                                                <div className="mt-3 break-words rounded-xl bg-[#f5ecdf] px-3 py-2 text-xs text-[#5b4636]">
                                                     <strong>Admin note:</strong> {o.adminNote}
                                                 </div>
                                             )}
 
                                             {isApproved && (
-                                                <button onClick={() => onPay(o)}
-                                                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-[#24170f] px-5 py-3 text-sm font-semibold text-white">
+                                                <button
+                                                    onClick={() => onPay(o)}
+                                                    className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-[#24170f] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5"
+                                                >
                                                     <CreditCard size={15} /> Pay now {currency(o.total)}
                                                 </button>
                                             )}
 
                                             {isPaid && (
-                                                <div className="mt-4 flex items-center gap-2 rounded-full bg-[#e2f0e5] px-4 py-2 text-xs font-semibold text-[#1d7a3e]">
-                                                    <CheckCircle2 size={14} /> Payment received · {o.paymentId}
+                                                <div className="mt-4 flex items-center gap-2 rounded-full bg-[#e2f0e5] px-4 py-2 text-[11px] font-semibold text-[#1d7a3e] sm:text-xs">
+                                                    <CheckCircle2 size={14} className="shrink-0" />
+                                                    <span className="min-w-0 truncate">
+                                                        Payment received · {o.paymentId}
+                                                    </span>
                                                 </div>
                                             )}
                                         </div>
@@ -270,32 +334,38 @@ export default function MyOrdersModal({ onClose, onPay }) {
             {/* Lightbox */}
             {lightbox && (
                 <div
-                    className="fixed inset-0 z-[95] grid place-items-center bg-black/90 p-4 backdrop-blur-md"
+                    className="fixed inset-0 z-[95] grid place-items-center bg-black/90 p-3 backdrop-blur-md sm:p-4"
                     onMouseDown={() => setLightbox(null)}
                 >
                     <div
                         onMouseDown={e => e.stopPropagation()}
-                        className="relative flex max-h-[95vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-[#24170f] shadow-2xl"
+                        className="relative flex max-h-[95dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-[#24170f] shadow-2xl sm:rounded-3xl"
                     >
                         <button
                             onClick={() => setLightbox(null)}
-                            className="absolute right-4 top-4 z-10 grid h-11 w-11 place-items-center rounded-full bg-black/70 text-white transition hover:bg-black/90"
+                            className="absolute right-3 top-3 z-10 grid h-10 w-10 place-items-center rounded-full bg-black/70 text-white transition hover:bg-black/90 sm:right-4 sm:top-4 sm:h-11 sm:w-11"
                             title="Close (Esc)"
+                            aria-label="Close"
                         >
-                            <X size={22} />
+                            <X size={20} className="sm:hidden" />
+                            <X size={22} className="hidden sm:block" />
                         </button>
 
-                        <div className="grid flex-1 place-items-center overflow-auto bg-black/40 p-4">
+                        <div className="grid min-h-0 flex-1 place-items-center overflow-auto bg-black/40 p-3 sm:p-4">
                             <img
                                 src={lightbox.src}
                                 alt={lightbox.alt}
-                                className="max-h-[80vh] w-auto max-w-full rounded-2xl object-contain shadow-2xl"
+                                className="max-h-[72dvh] w-auto max-w-full rounded-xl object-contain shadow-2xl sm:max-h-[80vh] sm:rounded-2xl"
                             />
                         </div>
 
-                        <div className="border-t border-white/10 bg-[#24170f] px-6 py-4 text-center">
-                            <div className="text-[10px] uppercase tracking-[.24em] text-[#8a6d53]">Design</div>
-                            <div className="serif mt-1 text-xl font-semibold text-[#f1cf8a]">{lightbox.alt}</div>
+                        <div className="shrink-0 border-t border-white/10 bg-[#24170f] px-4 py-3 text-center sm:px-6 sm:py-4">
+                            <div className="text-[10px] uppercase tracking-[.2em] text-[#8a6d53] sm:tracking-[.24em]">
+                                Design
+                            </div>
+                            <div className="serif mt-1 truncate text-base font-semibold text-[#f1cf8a] sm:text-xl">
+                                {lightbox.alt}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -320,20 +390,21 @@ function LiveTimer({ startedAt }) {
     const s = elapsed % 60;
 
     return (
-        <div className="mt-3 flex items-center gap-3 rounded-2xl border border-[#f0d98c] bg-gradient-to-br from-[#fdf3d6] to-[#fff8e5] px-4 py-3">
-            <span className="relative flex h-3 w-3">
+        <div className="mt-3 flex items-center gap-3 rounded-2xl border border-[#f0d98c] bg-gradient-to-br from-[#fdf3d6] to-[#fff8e5] px-3 py-2.5 sm:px-4 sm:py-3">
+            <span className="relative flex h-2.5 w-2.5 shrink-0 sm:h-3 sm:w-3">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#8a6d1c] opacity-60" />
-                <span className="relative inline-flex h-3 w-3 rounded-full bg-[#8a6d1c]" />
+                <span className="relative inline-flex h-full w-full rounded-full bg-[#8a6d1c]" />
             </span>
-            <div className="flex-1">
-                <div className="text-[10px] uppercase tracking-[.2em] text-[#8a6d1c]">
+            <div className="min-w-0 flex-1">
+                <div className="text-[9px] uppercase tracking-[.18em] text-[#8a6d1c] sm:text-[10px] sm:tracking-[.2em]">
                     Studio is working on your design
                 </div>
-                <div className="serif mt-0.5 text-2xl font-bold text-[#5b4636] tabular-nums">
+                <div className="serif mt-0.5 text-xl font-bold tabular-nums text-[#5b4636] sm:text-2xl">
                     {String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}
                 </div>
             </div>
-            <Sparkles size={20} className="text-[#8a6d1c]" />
+            <Sparkles size={18} className="shrink-0 text-[#8a6d1c] sm:hidden" />
+            <Sparkles size={20} className="hidden shrink-0 text-[#8a6d1c] sm:block" />
         </div>
     );
 }

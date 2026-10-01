@@ -121,40 +121,54 @@ export default function AdminDashboard({ user, onLogout }) {
     const pendingCount = orders.filter(o => o.status === "pending").length;
     const verifyCount = orders.filter(o => o.status === "awaiting-verification").length;
 
+    /* Completed & rejected live in Reports, not in the active list */
+    const HIDDEN_STATUSES = ["completed", "rejected"];
+    const activeOrders = orders.filter(o => !HIDDEN_STATUSES.includes(o.status));
+
     return (
-        <div className="min-h-screen bg-[#fbf8f2] text-[#2a1a12]">
+        <div className="min-h-[100dvh] overflow-x-hidden bg-[#fbf8f2] text-[#2a1a12]">
+            {/* ================= HEADER ================= */}
             <header className="sticky top-0 z-30 border-b border-[#eadfce] bg-[#fbf8f2]/90 backdrop-blur">
-                <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 lg:px-8">
-                    <div className="flex items-center gap-3">
-                        <div className="grid h-9 w-9 place-items-center rounded-full bg-[#24170f] text-[#f1cf8a] serif">M</div>
-                        <div>
-                            <div className="serif font-bold leading-tight">Mehndi Studio</div>
-                            <div className="text-[10px] uppercase tracking-[.22em] text-[#8a6d53]">
+                <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-5 lg:px-8">
+                    <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#24170f] text-[#f1cf8a] serif">
+                            M
+                        </div>
+                        <div className="min-w-0">
+                            <div className="serif truncate text-sm font-bold leading-tight sm:text-base">
+                                Mehndi Studio
+                            </div>
+                            <div className="truncate text-[9px] uppercase tracking-[.18em] text-[#8a6d53] sm:text-[10px] sm:tracking-[.22em]">
                                 SuperAdmin · {user.username}
                             </div>
                         </div>
                     </div>
-                    <button onClick={onLogout}
-                        className="inline-flex items-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2 text-sm font-semibold hover:bg-[#f4eadc]">
-                        <LogOut size={15} /> Sign out
+
+                    <button
+                        onClick={onLogout}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#ded0bc] bg-white px-3 py-2 text-xs font-semibold hover:bg-[#f4eadc] sm:gap-2 sm:px-4 sm:text-sm"
+                    >
+                        <LogOut size={14} />
+                        <span className="hidden sm:inline">Sign out</span>
                     </button>
                 </div>
             </header>
 
-            <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
-                <div className="flex items-end justify-between gap-4">
+            <main className="mx-auto max-w-7xl px-4 py-6 sm:px-5 sm:py-10 lg:px-8">
+                {/* Title + Tab switcher */}
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                     <div>
-                        <h1 className="serif text-4xl font-semibold">Dashboard</h1>
-                        <p className="mt-2 text-sm text-[#715e4e]">
+                        <h1 className="serif text-3xl font-semibold sm:text-4xl">Dashboard</h1>
+                        <p className="mt-2 max-w-xl text-sm text-[#715e4e]">
                             Manage Google Drive storage, designs, users and appointments.
                         </p>
                     </div>
 
-                    {/* Tab switcher */}
-                    <div className="inline-flex rounded-full border border-[#ded0bc] bg-white p-1">
+                    {/* Tab switcher — full-width on mobile */}
+                    <div className="inline-flex w-full rounded-full border border-[#ded0bc] bg-white p-1 sm:w-auto">
                         <button
                             onClick={() => setTab("dashboard")}
-                            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${tab === "dashboard"
+                            className={`inline-flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition sm:flex-none sm:px-4 sm:text-sm ${tab === "dashboard"
                                 ? "bg-[#24170f] text-white"
                                 : "text-[#5b4636] hover:bg-[#f4eadc]"
                                 }`}
@@ -163,7 +177,7 @@ export default function AdminDashboard({ user, onLogout }) {
                         </button>
                         <button
                             onClick={() => setTab("reports")}
-                            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${tab === "reports"
+                            className={`inline-flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition sm:flex-none sm:px-4 sm:text-sm ${tab === "reports"
                                 ? "bg-[#24170f] text-white"
                                 : "text-[#5b4636] hover:bg-[#f4eadc]"
                                 }`}
@@ -174,28 +188,38 @@ export default function AdminDashboard({ user, onLogout }) {
                 </div>
 
                 {tab === "reports" ? (
-                    <div className="mt-8">
+                    <div className="mt-6 sm:mt-8">
                         <ReportsPanel />
                     </div>
                 ) : (
                     <>
                         {/* ---------- Drive + Quick cards ---------- */}
-                        <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
+                        <div className="mt-6 grid gap-4 sm:mt-8 sm:gap-6 lg:grid-cols-[1.2fr_.8fr]">
                             <GoogleDriveCard />
-                            <div className="grid gap-4">
-                                <button onClick={() => setAddOpen(true)} className="rounded-3xl border border-[#eadfce] bg-white p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md">
+                            <div className="grid gap-3 sm:gap-4">
+                                <button
+                                    onClick={() => setAddOpen(true)}
+                                    className="rounded-2xl border border-[#eadfce] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md sm:rounded-3xl sm:p-5"
+                                >
                                     <div className="flex items-center gap-3">
-                                        <div className="grid h-9 w-9 place-items-center rounded-full bg-[#f1cf8a]/40 text-[#7d3f24]">
+                                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#f1cf8a]/40 text-[#7d3f24]">
                                             <ImageIcon size={18} />
                                         </div>
-                                        <div className="flex-1">
-                                            <div className="font-semibold">Designs</div>
-                                            <div className="text-xs text-[#8a6d53]">Add & manage Mehndi designs</div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-sm font-semibold sm:text-base">Designs</div>
+                                            <div className="truncate text-[11px] text-[#8a6d53] sm:text-xs">
+                                                Add & manage Mehndi designs
+                                            </div>
                                         </div>
-                                        <Plus size={16} className="text-[#7d3f24]" />
+                                        <Plus size={16} className="shrink-0 text-[#7d3f24]" />
                                     </div>
                                 </button>
-                                <QuickCard icon={<Users size={18} />} title="Users" body="Create ADMIN & USER accounts" />
+
+                                <QuickCard
+                                    icon={<Users size={18} />}
+                                    title="Users"
+                                    body="Create ADMIN & USER accounts"
+                                />
                                 <QuickCard
                                     icon={<Bell size={18} />}
                                     title="Appointments"
@@ -210,20 +234,25 @@ export default function AdminDashboard({ user, onLogout }) {
                             </div>
                         </div>
 
-                        <div className="mt-6">
+                        <div className="mt-4 sm:mt-6">
                             <AdminSettingsCard />
                         </div>
 
                         {/* ---------- Appointments ---------- */}
-                        <section className="mt-12">
-                            <div className="mb-5 flex items-end justify-between">
+                        <section className="mt-10 sm:mt-12">
+                            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
-                                    <h2 className="serif text-2xl font-semibold">Appointment requests</h2>
-                                    <p className="text-sm text-[#8a6d53]">
-                                        {pendingCount} pending · {verifyCount} to verify · {orders.length} total
+                                    <h2 className="serif text-xl font-semibold sm:text-2xl">
+                                        Appointment requests
+                                    </h2>
+                                    <p className="text-xs text-[#8a6d53] sm:text-sm">
+                                        {pendingCount} pending · {verifyCount} to verify · {activeOrders.length} active
                                     </p>
                                 </div>
-                                <button onClick={loadOrders} className="rounded-full border border-[#ded0bc] bg-white px-4 py-2.5 text-sm font-semibold hover:bg-[#f4eadc]">
+                                <button
+                                    onClick={loadOrders}
+                                    className="self-start rounded-full border border-[#ded0bc] bg-white px-4 py-2.5 text-sm font-semibold hover:bg-[#f4eadc] sm:self-auto"
+                                >
                                     Refresh
                                 </button>
                             </div>
@@ -233,12 +262,16 @@ export default function AdminDashboard({ user, onLogout }) {
                                     <Loader2 className="mx-auto animate-spin" />
                                 </div>
                             ) : orders.length === 0 ? (
-                                <div className="rounded-3xl border border-dashed border-[#d9c7b0] bg-white p-12 text-center text-[#8a6d53]">
+                                <div className="rounded-3xl border border-dashed border-[#d9c7b0] bg-white p-10 text-center text-sm text-[#8a6d53] sm:p-12">
                                     No appointment requests yet.
+                                </div>
+                            ) : activeOrders.length === 0 ? (
+                                <div className="rounded-3xl border border-dashed border-[#d9c7b0] bg-white p-10 text-center text-sm text-[#8a6d53] sm:p-12">
+                                    No active appointment requests. Completed and rejected orders are in Reports.
                                 </div>
                             ) : (
                                 <div className="grid gap-4">
-                                    {orders.map(o => (
+                                    {activeOrders.map(o => (
                                         <OrderCard
                                             key={o.id}
                                             order={o}
@@ -252,37 +285,60 @@ export default function AdminDashboard({ user, onLogout }) {
                         </section>
 
                         {/* ---------- Designs ---------- */}
-                        <section className="mt-12">
-                            <div className="mb-5 flex items-end justify-between">
+                        <section className="mt-10 sm:mt-12">
+                            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
-                                    <h2 className="serif text-2xl font-semibold">Your designs</h2>
-                                    <p className="text-sm text-[#8a6d53]">
+                                    <h2 className="serif text-xl font-semibold sm:text-2xl">Your designs</h2>
+                                    <p className="text-xs text-[#8a6d53] sm:text-sm">
                                         {designs.length} {designs.length === 1 ? "design" : "designs"} stored in Drive
                                     </p>
                                 </div>
-                                <button onClick={() => setAddOpen(true)} className="inline-flex items-center gap-2 rounded-full bg-[#24170f] px-5 py-2.5 text-sm font-semibold text-white">
+                                <button
+                                    onClick={() => setAddOpen(true)}
+                                    className="inline-flex items-center justify-center gap-2 self-start rounded-full bg-[#24170f] px-5 py-2.5 text-sm font-semibold text-white sm:self-auto"
+                                >
                                     <Plus size={15} /> Add design
                                 </button>
                             </div>
 
                             {designs.length === 0 ? (
-                                <div className="rounded-3xl border border-dashed border-[#d9c7b0] bg-white p-12 text-center text-[#8a6d53]">
+                                <div className="rounded-3xl border border-dashed border-[#d9c7b0] bg-white p-10 text-center text-sm text-[#8a6d53] sm:p-12">
                                     No designs yet — click <strong>Add design</strong> to upload your first one to Drive.
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+                                <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
                                     {designs.map((d) => (
-                                        <div key={d.id} className="group relative overflow-hidden rounded-2xl border border-[#eadfce] bg-white">
-                                            <div className="aspect-[4/5] cursor-zoom-in bg-[#eadcc9]"
-                                                onClick={() => setLightbox({ src: imageUrl(d.image), alt: d.name })}>
-                                                <img src={imageUrl(d.image)} alt={d.name} className="h-full w-full object-cover" />
+                                        <div
+                                            key={d.id}
+                                            className="group relative overflow-hidden rounded-2xl border border-[#eadfce] bg-white"
+                                        >
+                                            <div
+                                                className="aspect-[4/5] cursor-zoom-in bg-[#eadcc9]"
+                                                onClick={() => setLightbox({ src: imageUrl(d.image), alt: d.name })}
+                                            >
+                                                <img
+                                                    src={imageUrl(d.image)}
+                                                    alt={d.name}
+                                                    loading="lazy"
+                                                    decoding="async"
+                                                    className="h-full w-full object-cover"
+                                                />
                                             </div>
-                                            <div className="p-3">
-                                                <div className="text-[10px] uppercase tracking-[.16em] text-[#9a7352]">{d.categoryName}</div>
-                                                <div className="truncate font-semibold text-sm">{d.name}</div>
+                                            <div className="p-2.5 sm:p-3">
+                                                <div className="text-[9px] uppercase tracking-[.14em] text-[#9a7352] sm:text-[10px] sm:tracking-[.16em]">
+                                                    {d.categoryName}
+                                                </div>
+                                                <div className="truncate text-xs font-semibold sm:text-sm">
+                                                    {d.name}
+                                                </div>
                                             </div>
-                                            <button onClick={() => removeDesign(d.id)}
-                                                className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-white/90 text-[#7d3f24] opacity-0 transition group-hover:opacity-100">
+
+                                            {/* Delete: always visible on mobile, hover-reveal on ≥sm */}
+                                            <button
+                                                onClick={() => removeDesign(d.id)}
+                                                aria-label="Remove design"
+                                                className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-white/90 text-[#7d3f24] shadow-sm transition sm:opacity-0 sm:group-hover:opacity-100"
+                                            >
                                                 <Trash2 size={14} />
                                             </button>
                                         </div>
@@ -297,7 +353,11 @@ export default function AdminDashboard({ user, onLogout }) {
             {addOpen && (
                 <AddDesignModal
                     onClose={() => setAddOpen(false)}
-                    onSaved={() => { setAddOpen(false); loadDesigns(); showToast("ok", "Design uploaded to Drive ✓"); }}
+                    onSaved={() => {
+                        setAddOpen(false);
+                        loadDesigns();
+                        showToast("ok", "Design uploaded to Drive ✓");
+                    }}
                 />
             )}
 
@@ -306,7 +366,11 @@ export default function AdminDashboard({ user, onLogout }) {
                     order={actionOrder.order}
                     mode={actionOrder.mode}
                     onClose={() => setActionOrder(null)}
-                    onDone={() => { setActionOrder(null); loadOrders(); showToast("ok", "Order updated"); }}
+                    onDone={() => {
+                        setActionOrder(null);
+                        loadOrders();
+                        showToast("ok", "Order updated");
+                    }}
                 />
             )}
 
@@ -319,10 +383,17 @@ export default function AdminDashboard({ user, onLogout }) {
             )}
 
             {toast && (
-                <div className={`fixed bottom-6 right-6 z-50 rounded-2xl px-5 py-3 text-sm font-semibold shadow-xl ${toast.kind === "err" ? "bg-[#7d3f24] text-white"
-                    : toast.kind === "ok" ? "bg-[#1d7a3e] text-white"
-                        : "bg-[#24170f] text-[#f1cf8a]"
-                    }`}>{toast.text}</div>
+                <div
+                    className={`fixed left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-2xl px-5 py-3 text-center text-sm font-semibold shadow-xl sm:left-auto sm:right-6 sm:w-auto sm:max-w-none sm:-translate-x-0 sm:text-left ${toast.kind === "err"
+                        ? "bg-[#7d3f24] text-white"
+                        : toast.kind === "ok"
+                            ? "bg-[#1d7a3e] text-white"
+                            : "bg-[#24170f] text-[#f1cf8a]"
+                        }`}
+                    style={{ bottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
+                >
+                    {toast.text}
+                </div>
             )}
         </div>
     );
@@ -332,12 +403,14 @@ export default function AdminDashboard({ user, onLogout }) {
 
 function QuickCard({ icon, title, body }) {
     return (
-        <div className="rounded-3xl border border-[#eadfce] bg-white p-5">
+        <div className="rounded-2xl border border-[#eadfce] bg-white p-4 sm:rounded-3xl sm:p-5">
             <div className="flex items-center gap-3">
-                <div className="grid h-9 w-9 place-items-center rounded-full bg-[#f1cf8a]/40 text-[#7d3f24]">{icon}</div>
-                <div>
-                    <div className="font-semibold">{title}</div>
-                    <div className="text-xs text-[#8a6d53]">{body}</div>
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#f1cf8a]/40 text-[#7d3f24]">
+                    {icon}
+                </div>
+                <div className="min-w-0">
+                    <div className="text-sm font-semibold sm:text-base">{title}</div>
+                    <div className="truncate text-[11px] text-[#8a6d53] sm:text-xs">{body}</div>
                 </div>
             </div>
         </div>
@@ -408,47 +481,77 @@ function OrderCard({ order, onAction, onRefresh, onViewImage }) {
     };
 
     return (
-        <div className={`rounded-2xl border-2 bg-white p-5 ${order.status === "awaiting-verification"
-            ? "border-[#f0b950] shadow-[0_0_0_3px_rgba(240,185,80,0.15)]"
-            : "border-[#eadfce]"
-            }`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <div className="text-[10px] uppercase tracking-[.18em] text-[#8a6d53]">
+        <div
+            className={`rounded-2xl border-2 bg-white p-4 sm:p-5 ${order.status === "awaiting-verification"
+                ? "border-[#f0b950] shadow-[0_0_0_3px_rgba(240,185,80,0.15)]"
+                : "border-[#eadfce]"
+                }`}
+        >
+            {/* Header row */}
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-3">
+                <div className="min-w-0">
+                    <div className="truncate text-[10px] uppercase tracking-[.16em] text-[#8a6d53] sm:tracking-[.18em]">
                         Order #{order.id.slice(0, 8)} · {order.username}
                     </div>
-                    <div className="mt-1 flex items-center gap-2 text-sm">
-                        <Calendar size={14} className="text-[#7d3f24]" /> {d}
-                        <Clock size={14} className="ml-2 text-[#7d3f24]" /> {t}
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
+                        <span className="inline-flex items-center gap-1.5">
+                            <Calendar size={13} className="text-[#7d3f24]" /> {d}
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                            <Clock size={13} className="text-[#7d3f24]" /> {t}
+                        </span>
                         {order.proposedDate && order.proposedDate !== order.requestedDate && (
-                            <span className="ml-2 rounded-full bg-[#f4eadc] px-2 py-0.5 text-[10px]">rescheduled</span>
+                            <span className="rounded-full bg-[#f4eadc] px-2 py-0.5 text-[10px]">
+                                rescheduled
+                            </span>
                         )}
                     </div>
-                    <div className="mt-1 text-xs text-[#8a6d53]">{order.email}</div>
+                    <div className="mt-1 truncate text-[11px] text-[#8a6d53] sm:text-xs">
+                        {order.email}
+                    </div>
                 </div>
-                <span className={`rounded-full px-3 py-1 text-xs font-bold ${STATUS.cls}`}>{STATUS.label}</span>
+
+                <span
+                    className={`self-start whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-bold sm:text-xs ${STATUS.cls}`}
+                >
+                    {STATUS.label}
+                </span>
             </div>
 
+            {/* Image thumbnails */}
             <div className="mt-3 flex flex-wrap gap-2">
                 {order.items.map((it, idx) => (
-                    <button key={idx} type="button"
+                    <button
+                        key={idx}
+                        type="button"
                         onClick={() => onViewImage?.(imageUrl(it.image), it.name)}
-                        className="h-20 w-16 cursor-zoom-in overflow-hidden rounded-xl border border-[#eadfce] bg-[#eadcc9] transition hover:ring-2 hover:ring-[#7d3f24]"
-                        title={`View ${it.name}`}>
-                        <img src={imageUrl(it.image)} alt={it.name} className="h-full w-full object-cover" />
+                        className="h-16 w-14 cursor-zoom-in overflow-hidden rounded-xl border border-[#eadfce] bg-[#eadcc9] transition hover:ring-2 hover:ring-[#7d3f24] sm:h-20 sm:w-16"
+                        title={`View ${it.name}`}
+                    >
+                        <img
+                            src={imageUrl(it.image)}
+                            alt={it.name}
+                            loading="lazy"
+                            decoding="async"
+                            className="h-full w-full object-cover"
+                        />
                     </button>
                 ))}
             </div>
 
-            <div className="mt-3 grid gap-1 border-t border-[#f0e6d8] pt-3 text-sm">
+            {/* Items + total */}
+            <div className="mt-3 grid gap-1 border-t border-[#f0e6d8] pt-3 text-xs sm:text-sm">
                 {order.items.map((it, i) => (
-                    <div key={i} className="flex justify-between text-[#715e4e]">
-                        <span>{it.qty}× {it.name}</span>
-                        <span>{currency(it.price * it.qty)}</span>
+                    <div key={i} className="flex justify-between gap-3 text-[#715e4e]">
+                        <span className="min-w-0 truncate">
+                            {it.qty}× {it.name}
+                        </span>
+                        <span className="shrink-0">{currency(it.price * it.qty)}</span>
                     </div>
                 ))}
-                <div className="mt-1 flex justify-between font-semibold">
-                    <span>Total</span><span>{currency(order.total)}</span>
+                <div className="mt-1 flex justify-between gap-3 font-semibold">
+                    <span>Total</span>
+                    <span>{currency(order.total)}</span>
                 </div>
             </div>
 
@@ -463,7 +566,7 @@ function OrderCard({ order, onAction, onRefresh, onViewImage }) {
                     <div className="flex items-center gap-2 font-semibold">
                         <ShieldAlert size={13} /> User claims they paid
                     </div>
-                    <div className="mt-1">
+                    <div className="mt-1 break-all">
                         UTR / Transaction ID:{" "}
                         <span className="font-mono font-bold">{order.utr}</span>
                     </div>
@@ -475,8 +578,11 @@ function OrderCard({ order, onAction, onRefresh, onViewImage }) {
 
             {order.status === "paid" && (
                 <div className="mt-4">
-                    <button onClick={startWork} disabled={verifyBusy}
-                        className="flex items-center gap-2 rounded-full bg-[#7d3f24] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+                    <button
+                        onClick={startWork}
+                        disabled={verifyBusy}
+                        className="flex w-full items-center justify-center gap-2 rounded-full bg-[#7d3f24] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
+                    >
                         <Play size={14} /> Start Mehndi session
                     </button>
                 </div>
@@ -488,8 +594,11 @@ function OrderCard({ order, onAction, onRefresh, onViewImage }) {
                         <Clock size={13} /> Session started at{" "}
                         {new Date(order.startedAt).toLocaleTimeString()}
                     </div>
-                    <button onClick={endWork} disabled={verifyBusy}
-                        className="flex items-center gap-2 rounded-full bg-[#1d7a3e] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+                    <button
+                        onClick={endWork}
+                        disabled={verifyBusy}
+                        className="flex w-full items-center justify-center gap-2 rounded-full bg-[#1d7a3e] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
+                    >
                         <Square size={14} /> End session
                     </button>
                 </div>
@@ -503,31 +612,44 @@ function OrderCard({ order, onAction, onRefresh, onViewImage }) {
                         : `${order.durationSeconds}s`}
                 </div>
             )}
+
             {order.status === "pending" && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                    <button onClick={() => onAction({ order, mode: "approve" })}
-                        className="flex items-center gap-2 rounded-full bg-[#1d7a3e] px-4 py-2 text-sm font-semibold text-white">
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    <button
+                        onClick={() => onAction({ order, mode: "approve" })}
+                        className="flex w-full items-center justify-center gap-2 rounded-full bg-[#1d7a3e] px-4 py-2 text-sm font-semibold text-white sm:w-auto"
+                    >
                         <CheckCircle2 size={14} /> Approve
                     </button>
-                    <button onClick={() => onAction({ order, mode: "reject" })}
-                        className="flex items-center gap-2 rounded-full border border-[#e6c4be] bg-white px-4 py-2 text-sm font-semibold text-[#9b3b2b]">
+                    <button
+                        onClick={() => onAction({ order, mode: "reject" })}
+                        className="flex w-full items-center justify-center gap-2 rounded-full border border-[#e6c4be] bg-white px-4 py-2 text-sm font-semibold text-[#9b3b2b] sm:w-auto"
+                    >
                         <XCircle size={14} /> Reject
                     </button>
-                    <button onClick={() => onAction({ order, mode: "reschedule" })}
-                        className="flex items-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2 text-sm font-semibold">
+                    <button
+                        onClick={() => onAction({ order, mode: "reschedule" })}
+                        className="flex w-full items-center justify-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2 text-sm font-semibold sm:w-auto"
+                    >
                         <Clock size={14} /> Change date/time
                     </button>
                 </div>
             )}
 
             {order.status === "awaiting-verification" && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                    <button onClick={confirmPayment} disabled={verifyBusy}
-                        className="flex items-center gap-2 rounded-full bg-[#1d7a3e] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    <button
+                        onClick={confirmPayment}
+                        disabled={verifyBusy}
+                        className="flex w-full items-center justify-center gap-2 rounded-full bg-[#1d7a3e] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
+                    >
                         <CheckCircle2 size={14} /> Payment received
                     </button>
-                    <button onClick={() => setRejectOpen(true)} disabled={verifyBusy}
-                        className="flex items-center gap-2 rounded-full border border-[#e6c4be] bg-white px-5 py-2.5 text-sm font-semibold text-[#9b3b2b]">
+                    <button
+                        onClick={() => setRejectOpen(true)}
+                        disabled={verifyBusy}
+                        className="flex w-full items-center justify-center gap-2 rounded-full border border-[#e6c4be] bg-white px-5 py-2.5 text-sm font-semibold text-[#9b3b2b] sm:w-auto"
+                    >
                         <XCircle size={14} /> Not received
                     </button>
                 </div>
@@ -544,23 +666,37 @@ function OrderCard({ order, onAction, onRefresh, onViewImage }) {
             )}
 
             {rejectOpen && (
-                <div className="fixed inset-0 z-[95] grid place-items-center bg-black/60 p-4" onMouseDown={() => setRejectOpen(false)}>
-                    <div onMouseDown={e => e.stopPropagation()} className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+                <div
+                    className="fixed inset-0 z-[95] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4"
+                    onMouseDown={() => setRejectOpen(false)}
+                >
+                    <div
+                        onMouseDown={e => e.stopPropagation()}
+                        className="w-full max-w-md rounded-t-[26px] bg-white p-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl sm:p-6"
+                    >
                         <h3 className="serif text-xl font-semibold">Payment not received?</h3>
                         <p className="mt-1 text-xs text-[#8a6d53]">
                             Explain why. The user will be asked to try again.
                         </p>
-                        <textarea rows="3" value={rejectReason}
+                        <textarea
+                            rows="3"
+                            value={rejectReason}
                             onChange={e => setRejectReason(e.target.value)}
                             placeholder="e.g. UTR not found in bank statement"
-                            className="mt-4 w-full rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 text-sm outline-none" />
+                            className="mt-4 w-full rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                        />
                         <div className="mt-4 flex gap-2">
-                            <button onClick={() => setRejectOpen(false)}
-                                className="flex-1 rounded-full border border-[#ded0bc] bg-white px-4 py-3 text-sm font-semibold">
+                            <button
+                                onClick={() => setRejectOpen(false)}
+                                className="flex-1 rounded-full border border-[#ded0bc] bg-white px-4 py-3 text-sm font-semibold"
+                            >
                                 Cancel
                             </button>
-                            <button onClick={submitReject} disabled={verifyBusy}
-                                className="flex-1 rounded-full bg-[#9b3b2b] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60">
+                            <button
+                                onClick={submitReject}
+                                disabled={verifyBusy}
+                                className="flex-1 rounded-full bg-[#9b3b2b] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                            >
                                 {verifyBusy ? "Sending…" : "Notify user"}
                             </button>
                         </div>
@@ -576,26 +712,27 @@ function OrderCard({ order, onAction, onRefresh, onViewImage }) {
 function ImageLightbox({ src, alt, onClose }) {
     return (
         <div
-            className="fixed inset-0 z-[90] grid place-items-center bg-black/85 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[90] grid place-items-center bg-black/85 p-3 backdrop-blur-sm sm:p-4"
             onMouseDown={onClose}
         >
             <div
                 onMouseDown={e => e.stopPropagation()}
-                className="relative max-h-[92vh] max-w-5xl overflow-hidden rounded-3xl bg-[#24170f] shadow-2xl"
+                className="relative max-h-[92dvh] w-full max-w-5xl overflow-hidden rounded-2xl bg-[#24170f] shadow-2xl sm:rounded-3xl"
             >
                 <button
                     onClick={onClose}
-                    className="absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                    className="absolute right-3 top-3 z-10 grid h-10 w-10 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80 sm:right-4 sm:top-4"
                     title="Close"
+                    aria-label="Close"
                 >
                     <X size={20} />
                 </button>
                 <img
                     src={src}
                     alt={alt}
-                    className="max-h-[88vh] w-auto object-contain"
+                    className="max-h-[80dvh] w-full object-contain sm:max-h-[88vh] sm:w-auto"
                 />
-                <div className="bg-[#24170f] px-6 py-3 text-center text-sm font-semibold text-[#f1cf8a]">
+                <div className="bg-[#24170f] px-4 py-3 text-center text-xs font-semibold text-[#f1cf8a] sm:text-sm">
                     {alt}
                 </div>
             </div>
@@ -631,50 +768,81 @@ function OrderActionModal({ order, mode, onClose, onDone }) {
         }
     };
 
-    const title = mode === "approve" ? "Approve appointment"
-        : mode === "reject" ? "Reject appointment"
+    const title = mode === "approve"
+        ? "Approve appointment"
+        : mode === "reject"
+            ? "Reject appointment"
             : "Change date/time";
 
     return (
-        <div className="fixed inset-0 z-[80] grid place-items-center bg-[#20140e]/70 p-4 backdrop-blur-sm" onMouseDown={onClose}>
-            <div onMouseDown={e => e.stopPropagation()} className="w-full max-w-md rounded-[28px] bg-[#fffdf9] p-6 shadow-2xl">
+        <div
+            className="fixed inset-0 z-[80] flex items-end justify-center bg-[#20140e]/70 backdrop-blur-sm sm:items-center sm:p-4"
+            onMouseDown={onClose}
+        >
+            <div
+                onMouseDown={e => e.stopPropagation()}
+                className="max-h-[92dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-[26px] bg-[#fffdf9] p-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-[28px] sm:p-6"
+            >
                 <h2 className="serif text-2xl font-semibold">{title}</h2>
-                <p className="mt-1 text-xs text-[#8a6d53]">Order #{order.id.slice(0, 8)} · {order.username}</p>
+                <p className="mt-1 text-xs text-[#8a6d53]">
+                    Order #{order.id.slice(0, 8)} · {order.username}
+                </p>
 
                 <form onSubmit={submit} className="mt-5 grid gap-3">
                     {mode === "reschedule" && (
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <label className="grid gap-1.5 text-xs font-semibold text-[#5b4636]">
                                 New date
-                                <input required type="date" value={proposedDate}
+                                <input
+                                    required
+                                    type="date"
+                                    value={proposedDate}
                                     onChange={e => setProposedDate(e.target.value)}
-                                    className="rounded-xl border border-[#ddcdb8] bg-white px-3 py-2.5 text-sm outline-none" />
+                                    className="rounded-xl border border-[#ddcdb8] bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                                />
                             </label>
                             <label className="grid gap-1.5 text-xs font-semibold text-[#5b4636]">
                                 New time
-                                <input required type="time" value={proposedTime}
+                                <input
+                                    required
+                                    type="time"
+                                    value={proposedTime}
                                     onChange={e => setProposedTime(e.target.value)}
-                                    className="rounded-xl border border-[#ddcdb8] bg-white px-3 py-2.5 text-sm outline-none" />
+                                    className="rounded-xl border border-[#ddcdb8] bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                                />
                             </label>
                         </div>
                     )}
 
                     <label className="grid gap-1.5 text-xs font-semibold text-[#5b4636]">
                         Note to user (optional)
-                        <textarea rows="3" value={adminNote}
+                        <textarea
+                            rows="3"
+                            value={adminNote}
                             onChange={e => setAdminNote(e.target.value)}
-                            className="rounded-xl border border-[#ddcdb8] bg-white px-3 py-2.5 text-sm outline-none" />
+                            className="rounded-xl border border-[#ddcdb8] bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                        />
                     </label>
 
-                    {error && <div className="rounded-xl bg-[#f8e4df] px-4 py-2.5 text-sm text-[#8c392d]">{error}</div>}
+                    {error && (
+                        <div className="rounded-xl bg-[#f8e4df] px-4 py-2.5 text-sm text-[#8c392d]">
+                            {error}
+                        </div>
+                    )}
 
-                    <div className="mt-1 flex gap-2">
-                        <button type="button" onClick={onClose}
-                            className="flex-1 rounded-full border border-[#ded0bc] bg-white px-4 py-3 text-sm font-semibold">
+                    <div className="mt-1 flex flex-col gap-2 sm:flex-row">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="w-full rounded-full border border-[#ded0bc] bg-white px-4 py-3 text-sm font-semibold sm:flex-1"
+                        >
                             Cancel
                         </button>
-                        <button disabled={busy} type="submit"
-                            className="flex-1 rounded-full bg-[#24170f] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60">
+                        <button
+                            disabled={busy}
+                            type="submit"
+                            className="w-full rounded-full bg-[#24170f] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60 sm:flex-1"
+                        >
                             {busy ? "Saving…" : "Confirm"}
                         </button>
                     </div>
@@ -723,93 +891,146 @@ function AddDesignModal({ onClose, onSaved }) {
     };
 
     return (
-        <div className="fixed inset-0 z-[60] overflow-auto bg-[#20140e]/60 p-4 backdrop-blur-sm">
-            <div className="mx-auto my-8 max-w-2xl rounded-[30px] bg-[#fffdf9] p-6 shadow-2xl sm:p-9">
-                <div className="flex items-start justify-between">
-                    <div>
-                        <div className="text-xs font-bold uppercase tracking-[.2em] text-[#9a7352]">Catalog manager</div>
-                        <h2 className="serif mt-1 text-3xl">Add Mehndi design</h2>
-                    </div>
-                    <button onClick={onClose} className="rounded-full p-2 hover:bg-[#f1e6d8]"><X size={18} /></button>
-                </div>
-
-                <form onSubmit={submit} className="mt-7 grid gap-5">
-                    <label className="grid gap-2 text-sm font-semibold">
-                        Design image
-                        <div className="relative rounded-2xl border-2 border-dashed border-[#d9c7b0] bg-[#faf5ed] p-6 text-center">
-                            {preview ? (
-                                <img src={preview} alt="preview" className="mx-auto max-h-48 rounded-xl object-contain" />
-                            ) : (
-                                <>
-                                    <Upload className="mx-auto text-[#946b49]" />
-                                    <div className="mt-2 text-sm text-[#8a6d53]">Choose JPG, PNG or WebP</div>
-                                </>
-                            )}
-                            <input required type="file" accept="image/*"
-                                onChange={(e) => pickFile(e.target.files?.[0])}
-                                className="absolute inset-0 cursor-pointer opacity-0" />
+        <div className="fixed inset-0 z-[60] overflow-y-auto overscroll-contain bg-[#20140e]/60 backdrop-blur-sm">
+            <div className="flex min-h-full items-end justify-center p-0 sm:items-center sm:p-4">
+                <div className="w-full max-w-2xl rounded-t-[26px] bg-[#fffdf9] p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl sm:my-8 sm:rounded-[30px] sm:p-9">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <div className="text-[11px] font-bold uppercase tracking-[.2em] text-[#9a7352] sm:text-xs">
+                                Catalog manager
+                            </div>
+                            <h2 className="serif mt-1 text-2xl sm:text-3xl">Add Mehndi design</h2>
                         </div>
-                    </label>
-
-                    <div className="grid gap-5 sm:grid-cols-2">
-                        <label className="grid gap-2 text-sm font-semibold">
-                            Design name
-                            <input required value={form.name}
-                                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                                className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 font-normal outline-none focus:ring-2 focus:ring-[#b07a4f]" />
-                        </label>
-                        <label className="grid gap-2 text-sm font-semibold">
-                            Category
-                            <select value={form.categoryId}
-                                onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
-                                className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 font-normal">
-                                {CATEGORY_OPTIONS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                        </label>
+                        <button
+                            onClick={onClose}
+                            aria-label="Close"
+                            className="grid h-10 w-10 shrink-0 place-items-center rounded-full hover:bg-[#f1e6d8]"
+                        >
+                            <X size={18} />
+                        </button>
                     </div>
 
-                    <label className="grid gap-2 text-sm font-semibold">
-                        Description
-                        <textarea rows="3" value={form.description}
-                            onChange={(e) => setForm({ ...form, description: e.target.value })}
-                            placeholder="Describe the motif, coverage, occasion…"
-                            className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 font-normal outline-none focus:ring-2 focus:ring-[#b07a4f]" />
-                    </label>
-
-                    <div className="grid gap-5 sm:grid-cols-2">
+                    <form onSubmit={submit} className="mt-6 grid gap-4 sm:mt-7 sm:gap-5">
                         <label className="grid gap-2 text-sm font-semibold">
-                            Price
-                            <input required type="number" min="0" value={form.price}
-                                onChange={(e) => setForm({ ...form, price: e.target.value })}
-                                placeholder="1500"
-                                className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 font-normal outline-none" />
+                            Design image
+                            <div className="relative rounded-2xl border-2 border-dashed border-[#d9c7b0] bg-[#faf5ed] p-5 text-center sm:p-6">
+                                {preview ? (
+                                    <img
+                                        src={preview}
+                                        alt="preview"
+                                        className="mx-auto max-h-40 rounded-xl object-contain sm:max-h-48"
+                                    />
+                                ) : (
+                                    <>
+                                        <Upload className="mx-auto text-[#946b49]" />
+                                        <div className="mt-2 text-xs text-[#8a6d53] sm:text-sm">
+                                            Choose JPG, PNG or WebP
+                                        </div>
+                                    </>
+                                )}
+                                <input
+                                    required
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => pickFile(e.target.files?.[0])}
+                                    className="absolute inset-0 cursor-pointer opacity-0"
+                                />
+                            </div>
                         </label>
+
+                        <div className="grid gap-4 sm:grid-cols-2 sm:gap-5">
+                            <label className="grid gap-2 text-sm font-semibold">
+                                Design name
+                                <input
+                                    required
+                                    value={form.name}
+                                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                                    className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 font-normal outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                                />
+                            </label>
+                            <label className="grid gap-2 text-sm font-semibold">
+                                Category
+                                <select
+                                    value={form.categoryId}
+                                    onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+                                    className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 font-normal"
+                                >
+                                    {CATEGORY_OPTIONS.map((c) => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                </select>
+                            </label>
+                        </div>
+
                         <label className="grid gap-2 text-sm font-semibold">
-                            Amount type
-                            <select value={form.amountType}
-                                onChange={(e) => setForm({ ...form, amountType: e.target.value })}
-                                className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 font-normal">
-                                <option>per design</option><option>per hand</option>
-                                <option>per pair</option><option>per hour</option><option>package</option>
-                            </select>
+                            Description
+                            <textarea
+                                rows="3"
+                                value={form.description}
+                                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                                placeholder="Describe the motif, coverage, occasion…"
+                                className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 font-normal outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                            />
                         </label>
-                    </div>
 
-                    <label className="flex items-center gap-3 rounded-xl bg-[#f5ecdf] p-4 text-sm">
-                        <input type="checkbox" checked={form.featured}
-                            onChange={(e) => setForm({ ...form, featured: e.target.checked })} />
-                        Mark this design as featured
-                    </label>
+                        <div className="grid gap-4 sm:grid-cols-2 sm:gap-5">
+                            <label className="grid gap-2 text-sm font-semibold">
+                                Price
+                                <input
+                                    required
+                                    type="number"
+                                    min="0"
+                                    value={form.price}
+                                    onChange={(e) => setForm({ ...form, price: e.target.value })}
+                                    placeholder="1500"
+                                    className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 font-normal outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                                />
+                            </label>
+                            <label className="grid gap-2 text-sm font-semibold">
+                                Amount type
+                                <select
+                                    value={form.amountType}
+                                    onChange={(e) => setForm({ ...form, amountType: e.target.value })}
+                                    className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 font-normal"
+                                >
+                                    <option>per design</option>
+                                    <option>per hand</option>
+                                    <option>per pair</option>
+                                    <option>per hour</option>
+                                    <option>package</option>
+                                </select>
+                            </label>
+                        </div>
 
-                    {error && (
-                        <div className="rounded-xl bg-[#f8e4df] px-4 py-3 text-sm text-[#8c392d]">{error}</div>
-                    )}
+                        <label className="flex items-center gap-3 rounded-xl bg-[#f5ecdf] p-4 text-sm">
+                            <input
+                                type="checkbox"
+                                checked={form.featured}
+                                onChange={(e) => setForm({ ...form, featured: e.target.checked })}
+                            />
+                            Mark this design as featured
+                        </label>
 
-                    <button disabled={busy}
-                        className="flex items-center justify-center gap-2 rounded-full bg-[#24170f] px-6 py-4 text-sm font-semibold text-white disabled:opacity-50">
-                        {busy ? <><Loader2 size={15} className="animate-spin" /> Uploading to Drive…</> : "Save design to Drive"}
-                    </button>
-                </form>
+                        {error && (
+                            <div className="rounded-xl bg-[#f8e4df] px-4 py-3 text-sm text-[#8c392d]">
+                                {error}
+                            </div>
+                        )}
+
+                        <button
+                            disabled={busy}
+                            className="flex min-h-[52px] items-center justify-center gap-2 rounded-full bg-[#24170f] px-6 py-4 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                            {busy ? (
+                                <>
+                                    <Loader2 size={15} className="animate-spin" /> Uploading to Drive…
+                                </>
+                            ) : (
+                                "Save design to Drive"
+                            )}
+                        </button>
+                    </form>
+                </div>
             </div>
         </div>
     );
