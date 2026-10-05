@@ -49,7 +49,11 @@ function App() {
       .finally(() => setChecking(false));
   }, [isAdminRoute]);
 
-  // Check for active event on public pages, or event from URL parameter (QR Code)
+  /* =========================================================
+     LOAD EVENT
+     - If ?event=ID in URL → fetch that specific event (QR code)
+     - Otherwise → fetch globally active event
+  ========================================================= */
   useEffect(() => {
     if (isAdminRoute) return;
 
@@ -58,22 +62,22 @@ function App() {
 
     const loadEvent = async () => {
       try {
-        // Fetch the active event first
-        const { data } = await api.get("/api/events/active");
-
-        if (data.active) {
-          // If URL specifies an event, check if it matches. If not, we still show the active one.
-          // (Or we can find the specific event by ID if we have a public endpoint for it)
-          if (eventIdFromUrl && data.event.id !== eventIdFromUrl) {
-            console.log("URL event does not match active event. Showing active event.");
+        if (eventIdFromUrl) {
+          // QR code scan: fetch the SPECIFIC event
+          const { data } = await api.get(`/api/events/${eventIdFromUrl}`);
+          if (data?.event) {
+            setActiveEvent(data.event);
+            return;
           }
+        }
+
+        // Fallback: check for a globally active event
+        const { data } = await api.get("/api/events/active");
+        if (data.active && data.event) {
           setActiveEvent(data.event);
-        } else if (eventIdFromUrl) {
-          // If no active event but URL has an ID, we might want to alert or just show normal page
-          console.warn("No active event found, but URL requested one.");
         }
       } catch (err) {
-        console.error("Failed to check active event:", err);
+        console.error("Failed to load event:", err?.response?.data || err.message);
       } finally {
         setCheckingEvent(false);
       }
