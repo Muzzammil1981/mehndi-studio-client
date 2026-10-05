@@ -33,6 +33,10 @@ export default function AdminDashboard({ user, onLogout }) {
     const [ordersLoading, setOrdersLoading] = useState(true);
     const [actionOrder, setActionOrder] = useState(null);
 
+    // NEW: State for events and filtering
+    const [events, setEvents] = useState([]);
+    const [eventFilter, setEventFilter] = useState("all");
+
     useEffect(() => { primeAudioOnFirstGesture(); }, []);
     useEffect(() => {
         const p = new URLSearchParams(window.location.search).get("google");
@@ -57,19 +61,37 @@ export default function AdminDashboard({ user, onLogout }) {
     }, []);
 
     const [tab, setTab] = useState("dashboard");
+
     const loadOrders = async (silent = false) => {
         if (!silent) setOrdersLoading(true);
-        try { const { data } = await api.get("/api/orders"); setOrders(data); }
+        try {
+            const { data } = await api.get("/api/orders");
+            setOrders(data);
+            // Also fetch events when loading orders
+            const evRes = await api.get("/api/events");
+            setEvents(Array.isArray(evRes.data) ? evRes.data : (evRes.data?.events || []));
+        }
         catch { /* ignore */ }
         finally { setOrdersLoading(false); }
     };
 
     useEffect(() => { loadOrders(); }, []);
+
     const showToast = (kind, text) => { setToast({ kind, text }); setTimeout(() => setToast(null), 3500); };
     const pendingCount = orders.filter(o => o.status === "pending").length;
     const verifyCount = orders.filter(o => o.status === "awaiting-verification").length;
     const HIDDEN_STATUSES = ["completed", "rejected"];
     const activeOrders = orders.filter(o => !HIDDEN_STATUSES.includes(o.status));
+
+    // NEW: Create a lookup map for event names
+    const eventNameMap = Object.fromEntries(events.map(e => [e.id, e.name]));
+
+    // NEW: Apply event filter
+    const filteredOrders = activeOrders.filter(o => {
+        if (eventFilter === "all") return true;
+        if (eventFilter === "none") return !o.eventId;
+        return o.eventId === eventFilter;
+    });
 
     return (
         <div className="min-h-[100dvh] overflow-x-hidden bg-[#fbf8f2] text-[#2a1a12]">
@@ -130,17 +152,40 @@ export default function AdminDashboard({ user, onLogout }) {
                                     <h2 className="serif text-xl font-semibold sm:text-2xl">Appointment requests</h2>
                                     <p className="text-xs text-[#8a6d53] sm:text-sm">{pendingCount} pending · {verifyCount} to verify · {activeOrders.length} active</p>
                                 </div>
-                                <button onClick={() => loadOrders()} className="self-start rounded-full border border-[#ded0bc] bg-white px-4 py-2.5 text-sm font-semibold hover:bg-[#f4eadc] sm:self-auto">Refresh</button>
+                                <div className="flex items-center gap-2 self-start sm:self-auto">
+                                    {/* NEW: Event Filter Dropdown */}
+                                    <select
+                                        value={eventFilter}
+                                        onChange={(e) => setEventFilter(e.target.value)}
+                                        className="rounded-full border border-[#ded0bc] bg-white px-4 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                                    >
+                                        <option value="all">All Events</option>
+                                        <option value="none">Normal Orders</option>
+                                        {events.map(e => (
+                                            <option key={e.id} value={e.id}>{e.name}</option>
+                                        ))}
+                                    </select>
+                                    <button onClick={() => loadOrders()} className="rounded-full border border-[#ded0bc] bg-white px-4 py-2.5 text-sm font-semibold hover:bg-[#f4eadc]">Refresh</button>
+                                </div>
                             </div>
                             {ordersLoading ? (
                                 <div className="rounded-2xl border border-[#eadfce] bg-white p-12 text-center text-[#8a6d53]"><Loader2 className="mx-auto animate-spin" /></div>
                             ) : orders.length === 0 ? (
                                 <div className="rounded-3xl border border-dashed border-[#d9c7b0] bg-white p-10 text-center text-sm text-[#8a6d53] sm:p-12">No appointment requests yet.</div>
-                            ) : activeOrders.length === 0 ? (
-                                <div className="rounded-3xl border border-dashed border-[#d9c7b0] bg-white p-10 text-center text-sm text-[#8a6d53] sm:p-12">No active appointment requests. Completed and rejected orders are in Reports.</div>
+                            ) : filteredOrders.length === 0 ? (
+                                <div className="rounded-3xl border border-dashed border-[#d9c7b0] bg-white p-10 text-center text-sm text-[#8a6d53] sm:p-12">No active appointment requests match this filter.</div>
                             ) : (
                                 <div className="grid gap-4">
-                                    {activeOrders.map(o => <OrderCard key={o.id} order={o} onAction={setActionOrder} onRefresh={() => loadOrders(true)} onViewImage={(src, alt) => setLightbox({ src, alt })} />)}
+                                    {filteredOrders.map(o => (
+                                        <OrderCard
+                                            key={o.id}
+                                            order={o}
+                                            eventName={eventNameMap[o.eventId]} // Pass event name down
+                                            onAction={setActionOrder}
+                                            onRefresh={() => loadOrders(true)}
+                                            onViewImage={(src, alt) => setLightbox({ src, alt })}
+                                        />
+                                    ))}
                                 </div>
                             )}
                         </section>
@@ -158,25 +203,17 @@ export default function AdminDashboard({ user, onLogout }) {
     );
 }
 
-/* EVENTS MANAGER COMPONENT (With QR Code Generator) */
-/* =========================================================
-   EVENTS MANAGER COMPONENT (With QR, Image Preview & Search)
-   ========================================================= */
+/* EVENTS MANAGER COMPONENT (With QR, Image Preview & Search) */
 function EventsManager() {
+    // ... [Keep your existing EventsManager code exactly as is] ...
+    // (No changes needed to EventsManager for this request)
     const [events, setEvents] = useState([]);
     const [designs, setDesigns] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
-
-    // QR Code State
     const [qrEvent, setQrEvent] = useState(null);
-
-    // Image Preview State
     const [previewDesign, setPreviewDesign] = useState(null);
-
-    // NEW: Search State
     const [designSearch, setDesignSearch] = useState("");
-
     const [name, setName] = useState("");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
@@ -184,86 +221,37 @@ function EventsManager() {
     const [selectAll, setSelectAll] = useState(false);
     const [priceOverrides, setPriceOverrides] = useState({});
 
-    useEffect(() => {
-        fetchEvents();
-        fetchDesigns();
-    }, []);
-
+    useEffect(() => { fetchEvents(); fetchDesigns(); }, []);
     const fetchEvents = async () => {
-        try {
-            const { data } = await api.get("/api/events");
-            setEvents(Array.isArray(data) ? data : (data?.events || []));
-        } catch (err) {
-            console.error("Failed to fetch events", err);
-            setEvents([]);
-        } finally {
-            setLoading(false);
-        }
+        try { const { data } = await api.get("/api/events"); setEvents(Array.isArray(data) ? data : (data?.events || [])); }
+        catch (err) { console.error(err); setEvents([]); }
+        finally { setLoading(false); }
     };
-
     const fetchDesigns = async () => {
-        try {
-            const { data } = await api.get("/api/designs");
-            setDesigns(data);
-        } catch (err) { console.error(err); }
+        try { const { data } = await api.get("/api/designs"); setDesigns(data); }
+        catch (err) { console.error(err); }
     };
-
-    const handleDesignToggle = (id) => {
-        setSelectedDesigns(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]);
-    };
-
+    const handleDesignToggle = (id) => setSelectedDesigns(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]);
     const handlePriceChange = (id, value) => {
-        if (value === "") {
-            setPriceOverrides(prev => {
-                const next = { ...prev };
-                delete next[id];
-                return next;
-            });
-        } else {
-            setPriceOverrides(prev => ({ ...prev, [id]: Number(value) }));
-        }
+        if (value === "") setPriceOverrides(prev => { const next = { ...prev }; delete next[id]; return next; });
+        else setPriceOverrides(prev => ({ ...prev, [id]: Number(value) }));
     };
-
-    // NEW: Filter designs based on search query
-    const filteredDesigns = designs.filter(d =>
-        d.name.toLowerCase().includes(designSearch.toLowerCase()) ||
-        (d.categoryName && d.categoryName.toLowerCase().includes(designSearch.toLowerCase()))
-    );
-
-    // NEW: Select all currently filtered designs
+    const filteredDesigns = designs.filter(d => d.name.toLowerCase().includes(designSearch.toLowerCase()) || (d.categoryName && d.categoryName.toLowerCase().includes(designSearch.toLowerCase())));
     const selectAllFiltered = () => {
         const filteredIds = filteredDesigns.map(d => d.id);
-        // Combine existing selected designs with the newly filtered ones
-        setSelectedDesigns(prev => {
-            const combined = new Set([...prev, ...filteredIds]);
-            return Array.from(combined);
-        });
+        setSelectedDesigns(prev => Array.from(new Set([...prev, ...filteredIds])));
     };
-
     const submitEvent = async (e) => {
         e.preventDefault();
         try {
-            await api.post("/api/events", {
-                name,
-                startDate,
-                endDate,
-                designIds: selectAll ? ["all"] : selectedDesigns,
-                priceOverrides
-            });
-            setShowForm(false);
-            fetchEvents();
-            setName(""); setStartDate(""); setEndDate(""); setSelectedDesigns([]); setSelectAll(false); setPriceOverrides({}); setDesignSearch("");
-        } catch (err) {
-            alert(err.response?.data?.message || "Failed to create event");
-        }
+            await api.post("/api/events", { name, startDate, endDate, designIds: selectAll ? ["all"] : selectedDesigns, priceOverrides });
+            setShowForm(false); fetchEvents(); setName(""); setStartDate(""); setEndDate(""); setSelectedDesigns([]); setSelectAll(false); setPriceOverrides({}); setDesignSearch("");
+        } catch (err) { alert(err.response?.data?.message || "Failed to create event"); }
     };
-
     const deleteEvent = async (id) => {
         if (!confirm("Are you sure you want to delete this event?")) return;
-        try {
-            await api.delete(`/api/events/${id}`);
-            fetchEvents();
-        } catch (err) { alert("Failed to delete event"); }
+        try { await api.delete(`/api/events/${id}`); fetchEvents(); }
+        catch (err) { alert("Failed to delete event"); }
     };
 
     return (
@@ -278,118 +266,52 @@ function EventsManager() {
             {showForm && (
                 <form onSubmit={submitEvent} className="bg-white p-6 rounded-2xl border border-[#eadfce] space-y-4 shadow-sm">
                     <div className="grid gap-4 sm:grid-cols-2">
-                        <label className="grid gap-1.5 text-sm font-semibold">
-                            Event Name
-                            <input required value={name} onChange={e => setName(e.target.value)} className="rounded-xl border border-[#ddcdb8] p-3 font-normal outline-none focus:ring-2 focus:ring-[#b07a4f]" placeholder="e.g. Diwali Special 2026" />
-                        </label>
+                        <label className="grid gap-1.5 text-sm font-semibold">Event Name<input required value={name} onChange={e => setName(e.target.value)} className="rounded-xl border border-[#ddcdb8] p-3 font-normal outline-none focus:ring-2 focus:ring-[#b07a4f]" placeholder="e.g. Diwali Special 2026" /></label>
                         <div className="grid grid-cols-2 gap-2">
-                            <label className="grid gap-1.5 text-sm font-semibold">
-                                Start Date & Time
-                                <input required type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="rounded-xl border border-[#ddcdb8] p-3 font-normal text-xs outline-none focus:ring-2 focus:ring-[#b07a4f]" />
-                            </label>
-                            <label className="grid gap-1.5 text-sm font-semibold">
-                                End Date & Time
-                                <input required type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="rounded-xl border border-[#ddcdb8] p-3 font-normal text-xs outline-none focus:ring-2 focus:ring-[#b07a4f]" />
-                            </label>
+                            <label className="grid gap-1.5 text-sm font-semibold">Start Date & Time<input required type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="rounded-xl border border-[#ddcdb8] p-3 font-normal text-xs outline-none focus:ring-2 focus:ring-[#b07a4f]" /></label>
+                            <label className="grid gap-1.5 text-sm font-semibold">End Date & Time<input required type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="rounded-xl border border-[#ddcdb8] p-3 font-normal text-xs outline-none focus:ring-2 focus:ring-[#b07a4f]" /></label>
                         </div>
                     </div>
-
                     <div className="border-t border-[#eadfce] pt-4">
                         <div className="flex flex-col gap-3 mb-3 sm:flex-row sm:items-center sm:justify-between">
                             <h3 className="font-semibold text-sm">Select Designs & Set Event Prices</h3>
-
                             <div className="flex items-center gap-2">
-                                {/* NEW: Select Filtered Button */}
-                                {designSearch && (
-                                    <button
-                                        type="button"
-                                        onClick={selectAllFiltered}
-                                        className="text-[10px] font-semibold text-[#7d3f24] bg-[#f4eadc] px-3 py-1.5 rounded-full hover:bg-[#eaddc8] transition"
-                                    >
-                                        Select Filtered ({filteredDesigns.length})
-                                    </button>
-                                )}
-                                <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer bg-[#f4eadc] px-3 py-1.5 rounded-full">
-                                    <input type="checkbox" checked={selectAll} onChange={e => setSelectAll(e.target.checked)} className="accent-[#7d3f24]" />
-                                    Select All Designs
-                                </label>
+                                {designSearch && <button type="button" onClick={selectAllFiltered} className="text-[10px] font-semibold text-[#7d3f24] bg-[#f4eadc] px-3 py-1.5 rounded-full hover:bg-[#eaddc8] transition">Select Filtered ({filteredDesigns.length})</button>}
+                                <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer bg-[#f4eadc] px-3 py-1.5 rounded-full"><input type="checkbox" checked={selectAll} onChange={e => setSelectAll(e.target.checked)} className="accent-[#7d3f24]" />Select All Designs</label>
                             </div>
                         </div>
-
                         {!selectAll && (
                             <>
-                                {/* NEW: Search Input */}
                                 <div className="relative mb-3">
                                     <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a6d53]" />
-                                    <input
-                                        type="text"
-                                        placeholder="Search designs by name or category..."
-                                        value={designSearch}
-                                        onChange={(e) => setDesignSearch(e.target.value)}
-                                        className="w-full rounded-xl border border-[#ddcdb8] bg-white pl-10 pr-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#b07a4f]"
-                                    />
+                                    <input type="text" placeholder="Search designs by name or category..." value={designSearch} onChange={(e) => setDesignSearch(e.target.value)} className="w-full rounded-xl border border-[#ddcdb8] bg-white pl-10 pr-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#b07a4f]" />
                                 </div>
-
                                 <div className="max-h-60 overflow-y-auto border border-[#eadfce] rounded-xl p-3 space-y-2 bg-[#fbf8f2]">
-                                    {filteredDesigns.length === 0 ? (
-                                        <div className="text-center py-6 text-xs text-[#8a6d53]">
-                                            No designs found matching "{designSearch}"
-                                        </div>
-                                    ) : (
+                                    {filteredDesigns.length === 0 ? <div className="text-center py-6 text-xs text-[#8a6d53]">No designs found matching "{designSearch}"</div> :
                                         filteredDesigns.map(d => (
                                             <div key={d.id} className="flex flex-col gap-2 bg-white p-3 rounded-lg border border-[#f0e6d8] transition">
-
-                                                {/* Top Row: Checkbox, Name, Image Preview Button */}
                                                 <div className="flex items-center justify-between">
-                                                    <label className="flex items-center gap-3 text-xs font-semibold truncate max-w-[250px] cursor-pointer">
-                                                        <input type="checkbox" checked={selectedDesigns.includes(d.id)} onChange={() => handleDesignToggle(d.id)} className="accent-[#7d3f24]" />
-                                                        <span className="truncate">{d.name}</span>
-                                                    </label>
-
-                                                    {/* Image Preview Button */}
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setPreviewDesign(d)}
-                                                        className="text-[#8a6d53] hover:text-[#7d3f24] p-1.5 rounded-full hover:bg-[#f4eadc] transition"
-                                                        title="View Design"
-                                                    >
-                                                        <ImageIcon size={14} />
-                                                    </button>
+                                                    <label className="flex items-center gap-3 text-xs font-semibold truncate max-w-[250px] cursor-pointer"><input type="checkbox" checked={selectedDesigns.includes(d.id)} onChange={() => handleDesignToggle(d.id)} className="accent-[#7d3f24]" /><span className="truncate">{d.name}</span></label>
+                                                    <button type="button" onClick={() => setPreviewDesign(d)} className="text-[#8a6d53] hover:text-[#7d3f24] p-1.5 rounded-full hover:bg-[#f4eadc] transition" title="View Design"><ImageIcon size={14} /></button>
                                                 </div>
-
-                                                {/* Bottom Row: Price Input (Only when selected) */}
                                                 {selectedDesigns.includes(d.id) && (
                                                     <div className="flex items-center justify-between mt-1 pt-2 border-t border-[#f0e6d8]">
-                                                        <span className="text-[10px] text-[#8a6d53] uppercase tracking-wider">
-                                                            Event Price: <span className="font-bold text-[#7d3f24]">(Current: {currency(d.price)})</span>
-                                                        </span>
-                                                        <input
-                                                            type="number"
-                                                            placeholder={`Leave blank for ${d.price}`}
-                                                            value={priceOverrides[d.id] || ""}
-                                                            onChange={(e) => handlePriceChange(d.id, e.target.value)}
-                                                            className="w-32 border border-[#ddcdb8] rounded-lg p-1.5 text-xs outline-none focus:ring-1 focus:ring-[#b07a4f]"
-                                                        />
+                                                        <span className="text-[10px] text-[#8a6d53] uppercase tracking-wider">Event Price: <span className="font-bold text-[#7d3f24]">(Current: {currency(d.price)})</span></span>
+                                                        <input type="number" placeholder={`Leave blank for ${d.price}`} value={priceOverrides[d.id] || ""} onChange={(e) => handlePriceChange(d.id, e.target.value)} className="w-32 border border-[#ddcdb8] rounded-lg p-1.5 text-xs outline-none focus:ring-1 focus:ring-[#b07a4f]" />
                                                     </div>
                                                 )}
                                             </div>
-                                        ))
-                                    )}
+                                        ))}
                                 </div>
                             </>
                         )}
                     </div>
-
                     <button type="submit" className="w-full bg-[#1d7a3e] text-white py-3.5 rounded-full font-semibold text-sm hover:bg-[#155c2d] transition shadow-md">Save Event to Google Drive</button>
                 </form>
             )}
 
             <div className="grid gap-4">
-                {loading ? (
-                    <div className="text-center p-8 text-[#8a6d53]"><Loader2 className="mx-auto animate-spin" /></div>
-                ) : events.length === 0 ? (
-                    <div className="text-center p-8 text-[#8a6d53] border border-dashed rounded-2xl bg-white">No events created yet.</div>
-                ) : (
+                {loading ? <div className="text-center p-8 text-[#8a6d53]"><Loader2 className="mx-auto animate-spin" /></div> : events.length === 0 ? <div className="text-center p-8 text-[#8a6d53] border border-dashed rounded-2xl bg-white">No events created yet.</div> :
                     events.map(e => (
                         <div key={e.id} className="bg-white p-5 rounded-2xl border border-[#eadfce] flex justify-between items-center shadow-sm hover:shadow-md transition">
                             <div>
@@ -398,60 +320,34 @@ function EventsManager() {
                                     <span className="flex items-center gap-1"><Calendar size={12} /> Start: {new Date(e.startDate).toLocaleString()}</span>
                                     <span className="flex items-center gap-1"><Clock size={12} /> End: {new Date(e.endDate).toLocaleString()}</span>
                                 </div>
-                                <div className="text-[10px] text-[#7d3f24] font-semibold mt-2 bg-[#f4eadc] inline-block px-2 py-1 rounded-full">
-                                    {e.designIds.includes("all") ? "All Designs Included" : `${e.designIds.length} Designs Included`}
-                                </div>
-                                <div className="text-[10px] text-[#1d7a3e] font-semibold mt-2 ml-2 bg-[#e2f0e5] inline-block px-2 py-1 rounded-full">
-                                    Token Counter: #{e.tokenCounter || 0}
-                                </div>
+                                <div className="text-[10px] text-[#7d3f24] font-semibold mt-2 bg-[#f4eadc] inline-block px-2 py-1 rounded-full">{e.designIds.includes("all") ? "All Designs Included" : `${e.designIds.length} Designs Included`}</div>
+                                <div className="text-[10px] text-[#1d7a3e] font-semibold mt-2 ml-2 bg-[#e2f0e5] inline-block px-2 py-1 rounded-full">Token Counter: #{e.tokenCounter || 0}</div>
                             </div>
                             <div className="flex items-center gap-2">
                                 <button onClick={() => setQrEvent(e)} className="text-[#7d3f24] p-3 hover:bg-[#f4eadc] rounded-full transition" title="Generate QR Code"><QrCode size={18} /></button>
                                 <button onClick={() => deleteEvent(e.id)} className="text-red-500 p-3 hover:bg-red-50 rounded-full transition" title="Delete Event"><Trash2 size={18} /></button>
                             </div>
                         </div>
-                    ))
-                )}
+                    ))}
             </div>
 
-            {/* QR CODE MODAL */}
             {qrEvent && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#20140e]/70 backdrop-blur-sm p-4" onMouseDown={() => setQrEvent(null)}>
                     <div onMouseDown={e => e.stopPropagation()} className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="serif text-xl font-semibold text-[#24170f]">Event QR Code</h3>
-                            <button onClick={() => setQrEvent(null)} className="text-[#8a6d53] hover:text-[#24170f]"><X size={20} /></button>
-                        </div>
+                        <div className="flex justify-between items-center mb-6"><h3 className="serif text-xl font-semibold text-[#24170f]">Event QR Code</h3><button onClick={() => setQrEvent(null)} className="text-[#8a6d53] hover:text-[#24170f]"><X size={20} /></button></div>
                         <p className="text-xs text-[#8a6d53] mb-4">Scan this QR code at your store to order from <strong>{qrEvent.name}</strong></p>
-                        <div className="bg-white p-4 rounded-2xl border border-[#eadfce] inline-block">
-                            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(`${window.location.origin}/?event=${qrEvent.id}`)}`} alt="Event QR Code" className="w-48 h-48 mx-auto" />
-                        </div>
+                        <div className="bg-white p-4 rounded-2xl border border-[#eadfce] inline-block"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(`${window.location.origin}/?event=${qrEvent.id}`)}`} alt="Event QR Code" className="w-48 h-48 mx-auto" /></div>
                         <p className="text-[10px] text-[#8a6d53] mt-4 break-all bg-[#faf5ed] p-2 rounded-lg">{window.location.origin}/?event={qrEvent.id}</p>
                     </div>
                 </div>
             )}
 
-            {/* DESIGN IMAGE PREVIEW MODAL */}
             {previewDesign && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center bg-[#20140e]/80 backdrop-blur-sm p-4" onMouseDown={() => setPreviewDesign(null)}>
                     <div onMouseDown={e => e.stopPropagation()} className="bg-white rounded-3xl p-4 max-w-lg w-full shadow-2xl relative">
-                        <button
-                            onClick={() => setPreviewDesign(null)}
-                            className="absolute right-4 top-4 z-10 grid h-8 w-8 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
-                        >
-                            <X size={16} />
-                        </button>
-                        <div className="flex items-center justify-center bg-[#eadcc9] rounded-2xl p-2 min-h-[300px]">
-                            <SafeImage
-                                src={imageUrl(previewDesign.image)}
-                                alt={previewDesign.name}
-                                className="w-full h-auto max-h-[60vh] object-contain rounded-xl"
-                            />
-                        </div>
-                        <div className="mt-4 text-center">
-                            <div className="font-semibold text-lg text-[#24170f]">{previewDesign.name}</div>
-                            <div className="text-sm text-[#8a6d53]">Current Price: {currency(previewDesign.price)}</div>
-                        </div>
+                        <button onClick={() => setPreviewDesign(null)} className="absolute right-4 top-4 z-10 grid h-8 w-8 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"><X size={16} /></button>
+                        <div className="flex items-center justify-center bg-[#eadcc9] rounded-2xl p-2 min-h-[300px]"><SafeImage src={imageUrl(previewDesign.image)} alt={previewDesign.name} className="w-full h-auto max-h-[60vh] object-contain rounded-xl" /></div>
+                        <div className="mt-4 text-center"><div className="font-semibold text-lg text-[#24170f]">{previewDesign.name}</div><div className="text-sm text-[#8a6d53]">Current Price: {currency(previewDesign.price)}</div></div>
                     </div>
                 </div>
             )}
@@ -474,8 +370,8 @@ function QuickCard({ icon, title, body }) {
     );
 }
 
-/* ---------- Order card (Now displays Token) ---------- */
-function OrderCard({ order, onAction, onRefresh, onViewImage }) {
+/* ---------- Order card (Now displays Event Name + Token) ---------- */
+function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
     const STATUS = {
         pending: { cls: "bg-[#f4eadc] text-[#8a6d53]", label: "Pending" },
         approved: { cls: "bg-[#e2f0e5] text-[#1d7a3e]", label: "Awaiting payment" },
@@ -528,10 +424,10 @@ function OrderCard({ order, onAction, onRefresh, onViewImage }) {
                 <div className="min-w-0">
                     <div className="truncate text-[10px] uppercase tracking-[.16em] text-[#8a6d53] sm:tracking-[.18em]">Order #{order.id.slice(0, 8)} · {order.username}</div>
 
-                    {/* EVENT TOKEN DISPLAY */}
+                    {/* UPDATED: EVENT TOKEN DISPLAY WITH NAME */}
                     {order.tokenNumber && (
                         <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#f1cf8a]/30 border border-[#f1cf8a]/50 px-3 py-1 text-[11px] font-bold text-[#7d3f24]">
-                            🎟️ Event Token: #{order.tokenNumber}
+                            🎟️ {eventName ? `${eventName} - ` : ""}Token #{order.tokenNumber}
                         </div>
                     )}
 
