@@ -12,6 +12,7 @@ import AccountModal from "./pages/AccountModal";
 import BookingModal from "./pages/BookingModal";
 import MyOrdersModal from "./pages/MyOrdersModal";
 import PaymentModal from "./pages/PaymentModal";
+import EventPage from "./pages/EventPage";
 import { api, API_BASE } from "./lib/api";
 import { playNotificationSound, primeAudioOnFirstGesture } from "./lib/notify";
 import { imageUrl, currency } from "./lib/format";
@@ -30,13 +31,13 @@ const seedCategories = [
   { id: "bridal", name: "Bridal Mehndi", shortName: "Bridal", description: "Full, luxurious compositions for weddings, celebrations and bridal moments.", accent: "Grand & timeless" }
 ];
 
-/* =========================================================
-   ROOT APP
-   ========================================================= */
 function App() {
   const isAdminRoute = window.location.pathname.startsWith("/admin");
   const [adminUser, setAdminUser] = useState(null);
   const [checking, setChecking] = useState(true);
+
+  const [activeEvent, setActiveEvent] = useState(null);
+  const [checkingEvent, setCheckingEvent] = useState(!isAdminRoute);
 
   useEffect(() => {
     if (!isAdminRoute) { setChecking(false); return; }
@@ -48,6 +49,39 @@ function App() {
       .finally(() => setChecking(false));
   }, [isAdminRoute]);
 
+  // Check for active event on public pages, or event from URL parameter (QR Code)
+  useEffect(() => {
+    if (isAdminRoute) return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const eventIdFromUrl = urlParams.get("event");
+
+    const loadEvent = async () => {
+      try {
+        // Fetch the active event first
+        const { data } = await api.get("/api/events/active");
+
+        if (data.active) {
+          // If URL specifies an event, check if it matches. If not, we still show the active one.
+          // (Or we can find the specific event by ID if we have a public endpoint for it)
+          if (eventIdFromUrl && data.event.id !== eventIdFromUrl) {
+            console.log("URL event does not match active event. Showing active event.");
+          }
+          setActiveEvent(data.event);
+        } else if (eventIdFromUrl) {
+          // If no active event but URL has an ID, we might want to alert or just show normal page
+          console.warn("No active event found, but URL requested one.");
+        }
+      } catch (err) {
+        console.error("Failed to check active event:", err);
+      } finally {
+        setCheckingEvent(false);
+      }
+    };
+
+    loadEvent();
+  }, [isAdminRoute]);
+
   const logout = () => {
     localStorage.removeItem("mehndi-token");
     setAdminUser(null);
@@ -57,24 +91,21 @@ function App() {
 
   if (isAdminRoute) {
     if (checking) {
-      return (
-        <div className="grid min-h-screen place-items-center bg-[#1b100b] text-[#f1cf8a]">
-          <div className="serif text-2xl animate-pulse">Loading studio…</div>
-        </div>
-      );
+      return <div className="grid min-h-screen place-items-center bg-[#1b100b] text-[#f1cf8a]"><div className="serif text-2xl animate-pulse">Loading studio…</div></div>;
     }
     if (!adminUser) return <LoginPage onLogin={setAdminUser} />;
     return <AdminDashboard user={adminUser} onLogout={logout} />;
   }
 
-  return <PublicCatalog />;
+  if (checkingEvent) {
+    return <div className="grid min-h-screen place-items-center bg-[#1b100b] text-[#f1cf8a]"><div className="serif text-2xl animate-pulse">Loading…</div></div>;
+  }
+
+  return <PublicCatalog activeEvent={activeEvent} />;
 }
 
-/* =========================================================
-   PUBLIC SITE
-   (designs are loaded page by page inside <Catalog />)
-   ========================================================= */
-function PublicCatalog() {
+/* PUBLIC SITE */
+function PublicCatalog({ activeEvent }) {
   const [categories, setCategories] = useState(seedCategories);
   const [activeCategory, setActiveCategory] = useState("all");
   const [search, setSearch] = useState("");
@@ -94,62 +125,41 @@ function PublicCatalog() {
   const [cart, setCart] = useState([]);
   const [selectedItems, setSelectedItems] = useState(new Set());
 
-  /* restore session */
   useEffect(() => {
     const token = localStorage.getItem("mehndi-user-token");
     if (!token) return;
-    api.get("/api/users/me")
-      .then(({ data }) => setUser(data.user))
-      .catch(() => localStorage.removeItem("mehndi-user-token"));
+    api.get("/api/users/me").then(({ data }) => setUser(data.user)).catch(() => localStorage.removeItem("mehndi-user-token"));
   }, []);
 
-  /* categories */
   useEffect(() => {
-    api.get("/api/categories")
-      .then(({ data }) => { if (Array.isArray(data) && data.length) setCategories(data); })
-      .catch(() => { /* keep seed categories */ });
+    api.get("/api/categories").then(({ data }) => { if (Array.isArray(data) && data.length) setCategories(data); }).catch(() => { });
   }, []);
 
-  /* load cart when user changes */
   useEffect(() => {
     if (!user) { setCart([]); setSelectedItems(new Set()); return; }
     try {
       const saved = JSON.parse(localStorage.getItem(`mehndi-cart-${user.id}`) || "[]");
       setCart(Array.isArray(saved) ? saved : []);
       setSelectedItems(new Set());
-    } catch {
-      setCart([]);
-      setSelectedItems(new Set());
-    }
+    } catch { setCart([]); setSelectedItems(new Set()); }
   }, [user?.id]);
 
-  /* persist cart */
   useEffect(() => {
     if (!user) return;
     localStorage.setItem(`mehndi-cart-${user.id}`, JSON.stringify(cart));
   }, [cart, user?.id]);
 
-  /* live notifications */
   useEffect(() => {
     if (!user) return;
     const token = localStorage.getItem("mehndi-user-token");
     const socket = io(API, { auth: { token } });
-
     socket.on("notification", (n) => {
-      playNotificationSound(
-        n.status === "approved" ? "success" :
-          n.status === "rejected" ? "error" :
-            "info"
-      );
-      if (n.type === "order-update") {
-        window.dispatchEvent(new CustomEvent("mehndi:order-update", { detail: n }));
-      }
+      playNotificationSound(n.status === "approved" ? "success" : n.status === "rejected" ? "error" : "info");
+      if (n.type === "order-update") window.dispatchEvent(new CustomEvent("mehndi:order-update", { detail: n }));
     });
-
     return () => socket.disconnect();
   }, [user?.id]);
 
-  /* cart ops */
   const doAddToCart = (design) => {
     setCart(prev => {
       const found = prev.find(x => x.id === design.id);
@@ -168,39 +178,25 @@ function PublicCatalog() {
   const handleAuthSuccess = (u) => {
     setUser(u);
     setAuthOpen(false);
-    if (pendingDesign) {
-      setTimeout(() => doAddToCart(pendingDesign), 100);
-      setPendingDesign(null);
-    }
+    if (pendingDesign) { setTimeout(() => doAddToCart(pendingDesign), 100); setPendingDesign(null); }
   };
 
   const userLogout = () => {
     localStorage.removeItem("mehndi-user-token");
-    setUser(null);
-    setCart([]);
-    setSelectedItems(new Set());
-    setCartOpen(false);
-    setAccountOpen(false);
-    setOrdersOpen(false);
-    setBookingOpen(false);
-    setPaymentOrder(null);
+    setUser(null); setCart([]); setSelectedItems(new Set()); setCartOpen(false); setAccountOpen(false); setOrdersOpen(false); setBookingOpen(false); setPaymentOrder(null);
   };
 
   const toggleItem = (id) => {
     setSelectedItems(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
 
   const toggleAll = () => {
-    if (selectedItems.size === cart.length) {
-      setSelectedItems(new Set());
-    } else {
-      setSelectedItems(new Set(cart.map(x => x.id)));
-    }
+    if (selectedItems.size === cart.length) setSelectedItems(new Set());
+    else setSelectedItems(new Set(cart.map(x => x.id)));
   };
 
   const cartCount = cart.reduce((n, x) => n + x.qty, 0);
@@ -210,166 +206,68 @@ function PublicCatalog() {
 
   return (
     <div className="min-h-screen bg-[#fbf8f2] text-[#2a1a12]">
-      <Header
-        count={cartCount}
-        onCart={() => (user ? setCartOpen(true) : setAuthOpen(true))}
-        onMenu={() => setMobileMenu(!mobileMenu)}
-        user={user}
-        onSignIn={() => setAuthOpen(true)}
-        onSignOut={userLogout}
-        onAccount={() => setAccountOpen(true)}
-        onOrders={() => setOrdersOpen(true)}
-      />
+      <Header count={cartCount} onCart={() => (user ? setCartOpen(true) : setAuthOpen(true))} onMenu={() => setMobileMenu(!mobileMenu)} user={user} onSignIn={() => setAuthOpen(true)} onSignOut={userLogout} onAccount={() => setAccountOpen(true)} onOrders={() => setOrdersOpen(true)} />
 
-      {mobileMenu && (
-        <MobileMenu
-          setMobileMenu={setMobileMenu}
-          setActiveCategory={setActiveCategory}
-          user={user}
-          onSignIn={() => setAuthOpen(true)}
-          onSignOut={userLogout}
-          onAccount={() => setAccountOpen(true)}
-          onOrders={() => setOrdersOpen(true)}
-        />
-      )}
+      {mobileMenu && <MobileMenu setMobileMenu={setMobileMenu} setActiveCategory={setActiveCategory} user={user} onSignIn={() => setAuthOpen(true)} onSignOut={userLogout} onAccount={() => setAccountOpen(true)} onOrders={() => setOrdersOpen(true)} />}
 
       <main>
-        <Hero onExplore={() => document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" })} />
-        <CategoryRail categories={categories} active={activeCategory} setActive={setActiveCategory} />
-        <Catalog
-          categories={categories}
-          activeCategory={activeCategory}
-          setActiveCategory={setActiveCategory}
-          search={search}
-          setSearch={setSearch}
-          onSelect={setSelected}
-          onAdmin={() => { window.location.href = "/admin"; }}
-        />
-        <Story />
+        {activeEvent ? (
+          <EventPage event={activeEvent} onAddToCart={addToCart} onSelect={setSelected} />
+        ) : (
+          <>
+            <Hero onExplore={() => document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" })} />
+            <CategoryRail categories={categories} active={activeCategory} setActive={setActiveCategory} />
+            <Catalog categories={categories} activeCategory={activeCategory} setActiveCategory={setActiveCategory} search={search} setSearch={setSearch} onSelect={setSelected} onAdmin={() => { window.location.href = "/admin"; }} />
+            <Story />
+          </>
+        )}
       </main>
 
       <Footer />
 
       {selected && <DesignModal design={selected} onClose={() => setSelected(null)} onAdd={addToCart} />}
-
-      {cartOpen && user && (
-        <CartDrawer
-          cart={cart}
-          setCart={setCart}
-          total={cartTotal}
-          selectedItems={selectedItems}
-          toggleItem={toggleItem}
-          toggleAll={toggleAll}
-          onClose={() => setCartOpen(false)}
-          onProceed={() => { setCartOpen(false); setBookingOpen(true); }}
-        />
-      )}
-
-      {authOpen && (
-        <AuthModal
-          reason={pendingDesign ? "Create an account or sign in to add this design to your selection." : null}
-          onClose={() => { setAuthOpen(false); setPendingDesign(null); }}
-          onSuccess={handleAuthSuccess}
-        />
-      )}
-
-      {accountOpen && user && (
-        <AccountModal
-          user={user}
-          onClose={() => setAccountOpen(false)}
-          onSignOut={userLogout}
-        />
-      )}
-
-      {bookingOpen && user && selectedCartItems.length > 0 && (
-        <BookingModal
-          cart={selectedCartItems}
-          total={selectedTotal}
-          onClose={() => setBookingOpen(false)}
-          onSuccess={() => {
-            const remaining = cart.filter(i => !selectedItems.has(i.id));
-            setCart(remaining);
-            setSelectedItems(new Set());
-            setBookingOpen(false);
-            setOrdersOpen(true);
-          }}
-        />
-      )}
-
-      {ordersOpen && user && (
-        <MyOrdersModal
-          onClose={() => setOrdersOpen(false)}
-          onPay={(order) => { setOrdersOpen(false); setPaymentOrder(order); }}
-        />
-      )}
-
-      {paymentOrder && user && (
-        <PaymentModal
-          order={paymentOrder}
-          onClose={() => setPaymentOrder(null)}
-          onPaid={() => { setPaymentOrder(null); setOrdersOpen(true); }}
-        />
-      )}
+      {cartOpen && user && <CartDrawer cart={cart} setCart={setCart} total={cartTotal} selectedItems={selectedItems} toggleItem={toggleItem} toggleAll={toggleAll} onClose={() => setCartOpen(false)} onProceed={() => { setCartOpen(false); setBookingOpen(true); }} />}
+      {authOpen && <AuthModal reason={pendingDesign ? "Create an account or sign in to add this design to your selection." : null} onClose={() => { setAuthOpen(false); setPendingDesign(null); }} onSuccess={handleAuthSuccess} />}
+      {accountOpen && user && <AccountModal user={user} onClose={() => setAccountOpen(false)} onSignOut={userLogout} />}
+      {bookingOpen && user && selectedCartItems.length > 0 && <BookingModal cart={selectedCartItems} total={selectedTotal} onClose={() => setBookingOpen(false)} onSuccess={() => { const remaining = cart.filter(i => !selectedItems.has(i.id)); setCart(remaining); setSelectedItems(new Set()); setBookingOpen(false); setOrdersOpen(true); }} />}
+      {ordersOpen && user && <MyOrdersModal onClose={() => setOrdersOpen(false)} onPay={(order) => { setOrdersOpen(false); setPaymentOrder(order); }} />}
+      {paymentOrder && user && <PaymentModal order={paymentOrder} onClose={() => setPaymentOrder(null)} onPaid={() => { setPaymentOrder(null); setOrdersOpen(true); }} />}
     </div>
   );
 }
 
-/* =========================================================
-   HEADER
-   ========================================================= */
+/* HEADER */
 function Header({ count, onCart, onMenu, user, onSignIn, onSignOut, onAccount, onOrders }) {
   return (
     <header className="sticky top-0 z-40 border-b border-[#eadfce] bg-[#fbf8f2]/90 backdrop-blur-xl">
       <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 lg:px-8">
         <a href="#" className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-full bg-[#24170f] text-[#f1cf8a]">
-            <span className="serif text-xl">M</span>
-          </div>
+          <div className="grid h-10 w-10 place-items-center rounded-full bg-[#24170f] text-[#f1cf8a]"><span className="serif text-xl">M</span></div>
           <div>
             <div className="serif text-xl font-bold tracking-tight">Mehndi Studio</div>
             <div className="text-[9px] uppercase tracking-[.28em] text-[#8a6d53]">Art on your hands</div>
           </div>
         </a>
-
         <nav className="hidden items-center gap-8 text-sm font-medium lg:flex">
           <a href="#catalog" className="hover:text-[#9b5d32]">Designs</a>
           <a href="#categories" className="hover:text-[#9b5d32]">Categories</a>
           <a href="#story" className="hover:text-[#9b5d32]">Our Story</a>
           <a href="/admin" className="rounded-full border border-[#ded0bc] bg-white px-4 py-1.5 hover:bg-[#f4eadc]">Admin</a>
         </nav>
-
         <div className="flex items-center gap-2">
           {user ? (
             <div className="hidden items-center gap-2 lg:flex">
-              <button onClick={onOrders}
-                className="flex items-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2 text-sm font-semibold hover:bg-[#f4eadc]">
-                📅 My orders
-              </button>
-              <button onClick={onAccount} title="Account settings"
-                className="flex items-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2 hover:bg-[#f4eadc]">
-                <User size={15} className="text-[#7d3f24]" />
-                <span className="max-w-[120px] truncate text-sm font-semibold">{user.username}</span>
-              </button>
-              <button onClick={onSignOut} title="Sign out"
-                className="flex items-center gap-2 rounded-full border border-[#e6c4be] bg-white px-4 py-2 text-sm font-semibold text-[#9b3b2b] hover:bg-[#f7e9e6]">
-                <LogOut size={15} /> Sign out
-              </button>
+              <button onClick={onOrders} className="flex items-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2 text-sm font-semibold hover:bg-[#f4eadc]">📅 My orders</button>
+              <button onClick={onAccount} title="Account settings" className="flex items-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2 hover:bg-[#f4eadc]"><User size={15} className="text-[#7d3f24]" /><span className="max-w-[120px] truncate text-sm font-semibold">{user.username}</span></button>
+              <button onClick={onSignOut} title="Sign out" className="flex items-center gap-2 rounded-full border border-[#e6c4be] bg-white px-4 py-2 text-sm font-semibold text-[#9b3b2b] hover:bg-[#f7e9e6]"><LogOut size={15} /> Sign out</button>
             </div>
           ) : (
-            <button onClick={onSignIn}
-              className="hidden items-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2 text-sm font-semibold hover:bg-[#f4eadc] lg:flex">
-              <User size={15} /> Sign in
-            </button>
+            <button onClick={onSignIn} className="hidden items-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2 text-sm font-semibold hover:bg-[#f4eadc] lg:flex"><User size={15} /> Sign in</button>
           )}
-
           <button onClick={onMenu} className="rounded-full p-3 hover:bg-[#f0e6d8] lg:hidden"><Menu size={20} /></button>
-
-          <button onClick={onCart}
-            className="relative rounded-full border border-[#ded0bc] bg-white p-3 shadow-sm transition hover:-translate-y-0.5">
+          <button onClick={onCart} className="relative rounded-full border border-[#ded0bc] bg-white p-3 shadow-sm transition hover:-translate-y-0.5">
             <ShoppingBag size={19} />
-            {count > 0 && (
-              <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#7d3f24] px-1 text-[10px] font-bold text-white">{count}</span>
-            )}
+            {count > 0 && <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#7d3f24] px-1 text-[10px] font-bold text-white">{count}</span>}
           </button>
         </div>
       </div>
@@ -383,29 +281,15 @@ function MobileMenu({ setMobileMenu, setActiveCategory, user, onSignIn, onSignOu
       {["all", "arabic", "indian", "pakistani", "moroccan", "indo-arabic", "minimal-modern", "bridal"].map(x =>
         <button key={x} onClick={() => { setActiveCategory(x); setMobileMenu(false); document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" }); }} className="rounded-xl px-4 py-3 text-left text-sm capitalize hover:bg-[#f4eadc]">{x === "all" ? "All Designs" : x.replace("-", " / ")}</button>
       )}
-
       {user ? (
         <>
-          <button onClick={() => { setMobileMenu(false); onOrders(); }}
-            className="flex items-center gap-2 rounded-xl border border-[#ded0bc] bg-white px-4 py-3 text-left text-sm font-semibold">
-            📅 My orders
-          </button>
-          <button onClick={() => { setMobileMenu(false); onAccount(); }}
-            className="flex items-center gap-2 rounded-xl border border-[#ded0bc] bg-white px-4 py-3 text-left text-sm font-semibold">
-            <User size={15} /> {user.username}
-          </button>
-          <button onClick={() => { setMobileMenu(false); onSignOut(); }}
-            className="flex items-center gap-2 rounded-xl border border-[#e6c4be] bg-white px-4 py-3 text-left text-sm font-semibold text-[#9b3b2b]">
-            <LogOut size={15} /> Sign out
-          </button>
+          <button onClick={() => { setMobileMenu(false); onOrders(); }} className="flex items-center gap-2 rounded-xl border border-[#ded0bc] bg-white px-4 py-3 text-left text-sm font-semibold">📅 My orders</button>
+          <button onClick={() => { setMobileMenu(false); onAccount(); }} className="flex items-center gap-2 rounded-xl border border-[#ded0bc] bg-white px-4 py-3 text-left text-sm font-semibold"><User size={15} /> {user.username}</button>
+          <button onClick={() => { setMobileMenu(false); onSignOut(); }} className="flex items-center gap-2 rounded-xl border border-[#e6c4be] bg-white px-4 py-3 text-left text-sm font-semibold text-[#9b3b2b]"><LogOut size={15} /> Sign out</button>
         </>
       ) : (
-        <button onClick={() => { setMobileMenu(false); onSignIn(); }}
-          className="flex items-center gap-2 rounded-xl border border-[#ded0bc] bg-white px-4 py-3 text-left text-sm font-semibold">
-          <User size={15} /> Sign in
-        </button>
+        <button onClick={() => { setMobileMenu(false); onSignIn(); }} className="flex items-center gap-2 rounded-xl border border-[#ded0bc] bg-white px-4 py-3 text-left text-sm font-semibold"><User size={15} /> Sign in</button>
       )}
-
       <a href="/admin" className="rounded-xl bg-[#24170f] px-4 py-3 text-left text-sm font-semibold text-white">Open Admin</a>
     </div>
   </div>;
@@ -415,22 +299,12 @@ function Hero({ onExplore }) {
   return <section className="hero-pattern relative overflow-hidden">
     <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-20 lg:grid-cols-[1.05fr_.95fr] lg:px-8 lg:py-28">
       <div>
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#dfc9a8] bg-white/70 px-4 py-2 text-xs font-semibold uppercase tracking-[.18em] text-[#835b38]">
-          <Sparkles size={14} /> Curated Mehndi Collection
-        </div>
-        <h1 className="serif max-w-3xl text-5xl font-semibold leading-[.98] tracking-[-.04em] sm:text-6xl lg:text-8xl">
-          Where tradition<br /><span className="italic text-[#8c4e2f]">becomes art.</span>
-        </h1>
-        <p className="mt-7 max-w-xl text-base leading-7 text-[#715e4e] sm:text-lg">
-          Explore expressive Mehndi designs across seven distinctive styles. Save your favourites, discover details and build your selection beautifully.
-        </p>
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#dfc9a8] bg-white/70 px-4 py-2 text-xs font-semibold uppercase tracking-[.18em] text-[#835b38]"><Sparkles size={14} /> Curated Mehndi Collection</div>
+        <h1 className="serif max-w-3xl text-5xl font-semibold leading-[.98] tracking-[-.04em] sm:text-6xl lg:text-8xl">Where tradition<br /><span className="italic text-[#8c4e2f]">becomes art.</span></h1>
+        <p className="mt-7 max-w-xl text-base leading-7 text-[#715e4e] sm:text-lg">Explore expressive Mehndi designs across seven distinctive styles. Save your favourites, discover details and build your selection beautifully.</p>
         <div className="mt-9 flex flex-wrap gap-3">
-          <button onClick={onExplore} className="group inline-flex items-center gap-3 rounded-full bg-[#24170f] px-6 py-3.5 text-sm font-semibold text-white shadow-luxe transition hover:-translate-y-0.5">
-            Explore collection <ArrowRight size={17} className="transition group-hover:translate-x-1" />
-          </button>
-          <div className="flex items-center gap-2 rounded-full border border-[#ddcdb8] bg-white/70 px-5 py-3.5 text-sm text-[#715e4e]">
-            <Star size={15} className="fill-[#bd8b48] text-[#bd8b48]" /> Designed for every occasion
-          </div>
+          <button onClick={onExplore} className="group inline-flex items-center gap-3 rounded-full bg-[#24170f] px-6 py-3.5 text-sm font-semibold text-white shadow-luxe transition hover:-translate-y-0.5">Explore collection <ArrowRight size={17} className="transition group-hover:translate-x-1" /></button>
+          <div className="flex items-center gap-2 rounded-full border border-[#ddcdb8] bg-white/70 px-5 py-3.5 text-sm text-[#715e4e]"><Star size={15} className="fill-[#bd8b48] text-[#bd8b48]" /> Designed for every occasion</div>
         </div>
       </div>
       <HeroArtwork />
@@ -447,15 +321,9 @@ function HeroArtwork() {
       <div className="absolute right-[16%] top-[31%] h-24 w-24 rounded-full border-[3px] border-[#754327]" />
       <div className="absolute left-[28%] top-[48%] h-40 w-40 rounded-full border-[3px] border-[#754327]" />
       <div className="absolute bottom-[12%] left-[16%] right-[16%] h-20 rounded-full border-[3px] border-[#754327]" />
-      <div className="absolute inset-x-10 bottom-8 text-center text-[#6f4027]">
-        <div className="serif text-4xl italic">Mehndi</div>
-        <div className="mt-1 text-[9px] uppercase tracking-[.5em]">timeless craft</div>
-      </div>
+      <div className="absolute inset-x-10 bottom-8 text-center text-[#6f4027]"><div className="serif text-4xl italic">Mehndi</div><div className="mt-1 text-[9px] uppercase tracking-[.5em]">timeless craft</div></div>
     </div>
-    <div className="absolute -bottom-2 -left-2 rounded-2xl border border-[#e2d1bb] bg-white/85 p-4 shadow-xl backdrop-blur">
-      <div className="text-[10px] uppercase tracking-[.2em] text-[#92765c]">Collection</div>
-      <div className="serif mt-1 text-xl">7 signature styles</div>
-    </div>
+    <div className="absolute -bottom-2 -left-2 rounded-2xl border border-[#e2d1bb] bg-white/85 p-4 shadow-xl backdrop-blur"><div className="text-[10px] uppercase tracking-[.2em] text-[#92765c]">Collection</div><div className="serif mt-1 text-xl">7 signature styles</div></div>
   </div>;
 }
 
@@ -470,97 +338,26 @@ function CategoryRail({ categories, active, setActive }) {
   </section>;
 }
 
-/* =========================================================
-   DESIGN MODAL
-   ========================================================= */
 function DesignModal({ design, onClose, onAdd }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#20140e]/60 p-3 backdrop-blur-sm sm:p-4"
-      onMouseDown={onClose}
-    >
-      <div
-        onMouseDown={(e) => e.stopPropagation()}
-        className="
-          flex w-full flex-col overflow-hidden
-          rounded-[24px] bg-[#fffdf9] shadow-2xl
-          max-h-[94dvh]
-          sm:max-w-xl sm:rounded-[30px]
-          md:max-h-[92dvh] md:max-w-4xl md:flex-row
-        "
-      >
-        {/* ============ IMAGE ============ */}
-        <div
-          className="
-            flex shrink-0 items-center justify-center
-            bg-[#eadcc9] p-2 sm:p-3
-            md:w-1/2 md:p-4
-          "
-        >
-          <SafeImage
-            src={imageUrl(design.image)}
-            alt={design.name}
-            eager
-            fallbackClassName="h-56 w-56 rounded-xl"
-            className="block h-auto w-auto max-w-full rounded-xl object-contain max-h-[40dvh] sm:max-h-[46dvh] md:max-h-[84dvh]"
-          />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#20140e]/60 p-3 backdrop-blur-sm sm:p-4" onMouseDown={onClose}>
+      <div onMouseDown={(e) => e.stopPropagation()} className="flex w-full flex-col overflow-hidden rounded-[24px] bg-[#fffdf9] shadow-2xl max-h-[94dvh] sm:max-w-xl sm:rounded-[30px] md:max-h-[92dvh] md:max-w-4xl md:flex-row">
+        <div className="flex shrink-0 items-center justify-center bg-[#eadcc9] p-2 sm:p-3 md:w-1/2 md:p-4">
+          <SafeImage src={imageUrl(design.image)} alt={design.name} eager fallbackClassName="h-56 w-56 rounded-xl" className="block h-auto w-auto max-w-full rounded-xl object-contain max-h-[40dvh] sm:max-h-[46dvh] md:max-h-[84dvh]" />
         </div>
-
-        {/* ============ CONTENT ============ */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-5 sm:p-7 md:w-1/2 md:p-8">
-          <div className="flex shrink-0 justify-end">
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-full p-2 text-[#24170f] transition hover:bg-[#f1e6d8] active:scale-95"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
+          <div className="flex shrink-0 justify-end"><button onClick={onClose} aria-label="Close" className="rounded-full p-2 text-[#24170f] transition hover:bg-[#f1e6d8] active:scale-95"><X size={20} /></button></div>
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-            <div className="mt-1 text-[10px] font-bold uppercase tracking-[.2em] text-[#9a7352] sm:text-xs">
-              {design.categoryName}
-            </div>
-
-            <h2 className="serif mt-2 text-3xl font-semibold leading-tight text-[#24170f] sm:text-4xl">
-              {design.name}
-            </h2>
-
-            <p className="mt-4 text-sm leading-6 text-[#725e4c] sm:mt-5 sm:text-base sm:leading-7">
-              {design.description ||
-                "A timeless Mehndi composition created for an elegant finish."}
-            </p>
-
+            <div className="mt-1 text-[10px] font-bold uppercase tracking-[.2em] text-[#9a7352] sm:text-xs">{design.categoryName}</div>
+            <h2 className="serif mt-2 text-3xl font-semibold leading-tight text-[#24170f] sm:text-4xl">{design.name}</h2>
+            <p className="mt-4 text-sm leading-6 text-[#725e4c] sm:mt-5 sm:text-base sm:leading-7">{design.description || "A timeless Mehndi composition created for an elegant finish."}</p>
             <div className="mt-5 rounded-2xl bg-[#f3e9dc] p-4 sm:mt-7 sm:p-5">
-              <div className="text-[10px] uppercase tracking-[.15em] text-[#927158] sm:text-xs">
-                Price
-              </div>
-              <div className="mt-1 flex items-end gap-2">
-                <span className="serif text-2xl font-bold text-[#24170f] sm:text-3xl">
-                  {currency(design.price)}
-                </span>
-                <span className="pb-1 text-[10px] text-[#806b58] sm:text-xs">
-                  {design.amountType}
-                </span>
-              </div>
+              <div className="text-[10px] uppercase tracking-[.15em] text-[#927158] sm:text-xs">Price</div>
+              <div className="mt-1 flex items-end gap-2"><span className="serif text-2xl font-bold text-[#24170f] sm:text-3xl">{currency(design.price)}</span><span className="pb-1 text-[10px] text-[#806b58] sm:text-xs">{design.amountType}</span></div>
             </div>
           </div>
-
           <div className="shrink-0 border-t border-[#eadcc9] bg-[#fffdf9] pt-4 sm:pt-5">
-            <button
-              onClick={() => onAdd(design)}
-              className="
-                flex w-full items-center justify-center gap-2
-                rounded-full bg-[#24170f] px-5 py-3.5
-                text-sm font-semibold text-white shadow-lg transition
-                hover:-translate-y-0.5 hover:bg-[#382419]
-                active:scale-[0.99] sm:py-4
-              "
-            >
-              <ShoppingBag size={17} />
-              Add to selection
-            </button>
+            <button onClick={() => onAdd(design)} className="flex w-full items-center justify-center gap-2 rounded-full bg-[#24170f] px-5 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-[#382419] active:scale-[0.99] sm:py-4"><ShoppingBag size={17} /> Add to selection</button>
           </div>
         </div>
       </div>
@@ -568,157 +365,59 @@ function DesignModal({ design, onClose, onAdd }) {
   );
 }
 
-/* =========================================================
-   CART DRAWER
-   ========================================================= */
-function CartDrawer({
-  cart, setCart, total,
-  selectedItems, toggleItem, toggleAll,
-  onClose, onProceed,
-}) {
-  const update = (id, delta) =>
-    setCart(prev => prev.map(x => x.id === id ? { ...x, qty: Math.max(1, x.qty + delta) } : x));
-
+function CartDrawer({ cart, setCart, total, selectedItems, toggleItem, toggleAll, onClose, onProceed }) {
+  const update = (id, delta) => setCart(prev => prev.map(x => x.id === id ? { ...x, qty: Math.max(1, x.qty + delta) } : x));
   const allSelected = cart.length > 0 && selectedItems.size === cart.length;
   const someSelected = selectedItems.size > 0 && selectedItems.size < cart.length;
-  const selectedTotal = cart
-    .filter(i => selectedItems.has(i.id))
-    .reduce((n, x) => n + x.qty * x.price, 0);
+  const selectedTotal = cart.filter(i => selectedItems.has(i.id)).reduce((n, x) => n + x.qty * x.price, 0);
 
   return (
     <div className="fixed inset-0 z-50 bg-[#20140e]/45" onMouseDown={onClose}>
-      <aside
-        onMouseDown={e => e.stopPropagation()}
-        className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-[#fffdf9] shadow-2xl"
-      >
+      <aside onMouseDown={e => e.stopPropagation()} className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-[#fffdf9] shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#eadfce] p-6">
-          <div>
-            <div className="text-xs font-bold uppercase tracking-[.2em] text-[#9a7352]">
-              Your selection
-            </div>
-            <h2 className="serif mt-1 text-3xl">Cart</h2>
-          </div>
-          <button onClick={onClose} className="rounded-full p-2 hover:bg-[#f1e6d8]">
-            <X />
-          </button>
+          <div><div className="text-xs font-bold uppercase tracking-[.2em] text-[#9a7352]">Your selection</div><h2 className="serif mt-1 text-3xl">Cart</h2></div>
+          <button onClick={onClose} className="rounded-full p-2 hover:bg-[#f1e6d8]"><X /></button>
         </div>
-
         {cart.length > 0 && (
           <div className="flex items-center justify-between border-b border-[#eadfce] bg-[#faf5ed] px-5 py-3">
-            <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                ref={el => { if (el) el.indeterminate = someSelected; }}
-                onChange={toggleAll}
-                className="h-4 w-4 accent-[#7d3f24]"
-              />
-              Select all ({cart.length})
-            </label>
-            <span className="text-xs text-[#8a6d53]">
-              {selectedItems.size} selected
-            </span>
+            <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold"><input type="checkbox" checked={allSelected} ref={el => { if (el) el.indeterminate = someSelected; }} onChange={toggleAll} className="h-4 w-4 accent-[#7d3f24]" />Select all ({cart.length})</label>
+            <span className="text-xs text-[#8a6d53]">{selectedItems.size} selected</span>
           </div>
         )}
-
         <div className="flex-1 overflow-auto p-5">
           {cart.length === 0 ? (
-            <div className="grid h-full place-items-center text-center">
-              <div>
-                <ShoppingBag className="mx-auto text-[#9a7352]" size={35} />
-                <p className="serif mt-4 text-2xl">Your selection is empty.</p>
-                <p className="mt-2 text-sm text-[#806b58]">
-                  Add designs you would like to keep together.
-                </p>
-              </div>
-            </div>
+            <div className="grid h-full place-items-center text-center"><div><ShoppingBag className="mx-auto text-[#9a7352]" size={35} /><p className="serif mt-4 text-2xl">Your selection is empty.</p><p className="mt-2 text-sm text-[#806b58]">Add designs you would like to keep together.</p></div></div>
           ) : (
             <div className="space-y-4">
               {cart.map(item => {
                 const isSelected = selectedItems.has(item.id);
                 return (
-                  <div
-                    key={item.id}
-                    className={`flex gap-3 rounded-2xl border p-3 transition ${isSelected
-                      ? "border-[#7d3f24] bg-[#fdf7ee]"
-                      : "border-[#eadfce] bg-white"
-                      }`}
-                  >
-                    <label className="flex shrink-0 cursor-pointer items-start pt-1">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleItem(item.id)}
-                        className="h-4 w-4 accent-[#7d3f24]"
-                      />
-                    </label>
-
-                    <SafeImage
-                      src={imageUrl(item.image, "thumb")}
-                      alt=""
-                      className="h-24 w-20 rounded-xl object-cover"
-                    />
-
+                  <div key={item.id} className={`flex gap-3 rounded-2xl border p-3 transition ${isSelected ? "border-[#7d3f24] bg-[#fdf7ee]" : "border-[#eadfce] bg-white"}`}>
+                    <label className="flex shrink-0 cursor-pointer items-start pt-1"><input type="checkbox" checked={isSelected} onChange={() => toggleItem(item.id)} className="h-4 w-4 accent-[#7d3f24]" /></label>
+                    <SafeImage src={imageUrl(item.image, "thumb")} alt="" className="h-24 w-20 rounded-xl object-cover" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-semibold">{item.name}</div>
                       <div className="mt-1 text-xs text-[#806b58]">{item.amountType}</div>
                       <div className="mt-2 font-bold">{currency(item.price)}</div>
                       <div className="mt-2 flex items-center gap-2">
-                        <button
-                          onClick={() => update(item.id, -1)}
-                          className="rounded-full border p-1"
-                        >
-                          <Minus size={12} />
-                        </button>
+                        <button onClick={() => update(item.id, -1)} className="rounded-full border p-1"><Minus size={12} /></button>
                         <span className="w-5 text-center text-xs">{item.qty}</span>
-                        <button
-                          onClick={() => update(item.id, 1)}
-                          className="rounded-full border p-1"
-                        >
-                          <Plus size={12} />
-                        </button>
+                        <button onClick={() => update(item.id, 1)} className="rounded-full border p-1"><Plus size={12} /></button>
                       </div>
                     </div>
-
-                    <button
-                      onClick={() => setCart(prev => prev.filter(x => x.id !== item.id))}
-                      className="self-start p-1 text-[#a17e63] hover:text-[#7d3f24]"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <button onClick={() => setCart(prev => prev.filter(x => x.id !== item.id))} className="self-start p-1 text-[#a17e63] hover:text-[#7d3f24]"><Trash2 size={16} /></button>
                   </div>
                 );
               })}
             </div>
           )}
         </div>
-
         {cart.length > 0 && (
           <div className="border-t border-[#eadfce] p-5">
-            <div className="flex justify-between text-sm text-[#806b58]">
-              <span>Subtotal</span>
-              <span>{currency(total)}</span>
-            </div>
-            {selectedItems.size > 0 && selectedItems.size < cart.length && (
-              <div className="mt-1 flex justify-between text-sm font-semibold text-[#7d3f24]">
-                <span>Selected ({selectedItems.size})</span>
-                <span>{currency(selectedTotal)}</span>
-              </div>
-            )}
-
-            <button
-              onClick={onProceed}
-              disabled={selectedItems.size === 0}
-              className="mt-4 w-full rounded-full bg-[#24170f] px-6 py-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {selectedItems.size === 0
-                ? "Select items to continue"
-                : `Continue with ${selectedItems.size} item${selectedItems.size > 1 ? "s" : ""}`}
-            </button>
-
-            <p className="mt-3 text-center text-[10px] text-[#9a846f]">
-              Pick your appointment date and time next.
-            </p>
+            <div className="flex justify-between text-sm text-[#806b58]"><span>Subtotal</span><span>{currency(total)}</span></div>
+            {selectedItems.size > 0 && selectedItems.size < cart.length && <div className="mt-1 flex justify-between text-sm font-semibold text-[#7d3f24]"><span>Selected ({selectedItems.size})</span><span>{currency(selectedTotal)}</span></div>}
+            <button onClick={onProceed} disabled={selectedItems.size === 0} className="mt-4 w-full rounded-full bg-[#24170f] px-6 py-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{selectedItems.size === 0 ? "Select items to continue" : `Continue with ${selectedItems.size} item${selectedItems.size > 1 ? "s" : ""}`}</button>
+            <p className="mt-3 text-center text-[10px] text-[#9a846f]">Pick your appointment date and time next.</p>
           </div>
         )}
       </aside>
@@ -729,10 +428,7 @@ function CartDrawer({
 function Story() {
   return <section id="story" className="border-t border-[#eadfce] bg-[#24170f] text-[#fff9ef]">
     <div className="mx-auto grid max-w-7xl gap-12 px-5 py-20 lg:grid-cols-2 lg:px-8">
-      <div>
-        <div className="text-xs font-bold uppercase tracking-[.24em] text-[#d8b37b]">The idea</div>
-        <h2 className="serif mt-3 text-5xl leading-tight">Every pattern has a personality.</h2>
-      </div>
+      <div><div className="text-xs font-bold uppercase tracking-[.24em] text-[#d8b37b]">The idea</div><h2 className="serif mt-3 text-5xl leading-tight">Every pattern has a personality.</h2></div>
       <div className="text-[#d9c9b8]">
         <p className="leading-7">From a quick Arabic trail to an elaborate bridal composition, Mehndi is more than decoration. This collection is designed to make discovering that expression simple, visual and personal.</p>
         <div className="mt-8 grid grid-cols-3 gap-4 border-t border-white/10 pt-7 text-center">
@@ -745,41 +441,18 @@ function Story() {
   </section>;
 }
 
-/* =========================================================
-   FOOTER — with "Powered by M-Technology"
-   ========================================================= */
 function Footer() {
   return (
     <footer className="relative overflow-hidden bg-[#1b100b] px-5 pt-12 pb-8 text-center text-xs text-[#aa9480]">
-      <div
-        className="pointer-events-none absolute inset-0 opacity-20"
-        style={{
-          backgroundImage: "radial-gradient(#c69a63 1px, transparent 1px)",
-          backgroundSize: "22px 22px",
-        }}
-      />
-
+      <div className="pointer-events-none absolute inset-0 opacity-20" style={{ backgroundImage: "radial-gradient(#c69a63 1px, transparent 1px)", backgroundSize: "22px 22px" }} />
       <div className="relative">
         <div className="serif text-xl text-[#eee0cf]">Mehndi Studio</div>
         <div className="mt-2">A modern catalog for a timeless craft.</div>
-
         <div className="mt-7 flex items-center justify-center gap-3 text-[11px]">
           <span className="text-[#7a6250]">Powered by</span>
-          <a
-            href="https://m-technology.in/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group inline-flex items-center gap-1.5 rounded-full border border-[#3a2418] bg-gradient-to-r from-[#24170f] to-[#2d1a11] px-4 py-2 font-semibold text-[#f1cf8a] shadow-lg shadow-black/40 transition hover:-translate-y-0.5 hover:border-[#f1cf8a]/50"
-          >
-            <Sparkles size={12} className="transition group-hover:rotate-12" />
-            <span>M-Technology</span>
-            <ExternalLink size={11} className="transition group-hover:translate-x-0.5" />
-          </a>
+          <a href="https://m-technology.in/" target="_blank" rel="noopener noreferrer" className="group inline-flex items-center gap-1.5 rounded-full border border-[#3a2418] bg-gradient-to-r from-[#24170f] to-[#2d1a11] px-4 py-2 font-semibold text-[#f1cf8a] shadow-lg shadow-black/40 transition hover:-translate-y-0.5 hover:border-[#f1cf8a]/50"><Sparkles size={12} className="transition group-hover:rotate-12" /><span>M-Technology</span><ExternalLink size={11} className="transition group-hover:translate-x-0.5" /></a>
         </div>
-
-        <div className="mt-7 border-t border-white/5 pt-5 text-[10px] text-[#7a6250]">
-          © {new Date().getFullYear()} Mehndi Studio · All rights reserved
-        </div>
+        <div className="mt-7 border-t border-white/5 pt-5 text-[10px] text-[#7a6250]">© {new Date().getFullYear()} Mehndi Studio · All rights reserved</div>
       </div>
     </footer>
   );

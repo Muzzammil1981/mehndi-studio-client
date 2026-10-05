@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
     Calendar, Users, IndianRupee, Clock, TrendingUp, Loader2, RefreshCw,
-    Trophy, Star, X,
+    Trophy, Star, X, Ticket, QrCode,
 } from "lucide-react";
 import { api } from "../lib/api";
 
@@ -29,7 +29,9 @@ export default function ReportsPanel() {
     const [from, setFrom] = useState(daysAgoISO(30));
     const [to, setTo] = useState(todayISO());
     const [userId, setUserId] = useState("");
+    const [eventId, setEventId] = useState(""); // <-- New event state
     const [customers, setCustomers] = useState([]);
+    const [events, setEvents] = useState([]); // <-- New events list state
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -41,6 +43,13 @@ export default function ReportsPanel() {
         } catch { /* ignore */ }
     };
 
+    const loadEvents = async () => {
+        try {
+            const { data } = await api.get("/api/reports/events");
+            setEvents(data);
+        } catch { /* ignore */ }
+    };
+
     const loadReport = async () => {
         setLoading(true); setError("");
         try {
@@ -48,6 +57,7 @@ export default function ReportsPanel() {
             if (from) params.set("from", from);
             if (to) params.set("to", to);
             if (userId) params.set("userId", userId);
+            if (eventId) params.set("eventId", eventId); // <-- Pass event filter
             const { data } = await api.get(`/api/reports?${params.toString()}`);
             setData(data);
         } catch (err) {
@@ -57,13 +67,18 @@ export default function ReportsPanel() {
         }
     };
 
-    useEffect(() => { loadCustomers(); }, []);
-    useEffect(() => { loadReport(); }, [from, to, userId]);
+    useEffect(() => {
+        loadCustomers();
+        loadEvents();
+    }, []);
+
+    useEffect(() => { loadReport(); }, [from, to, userId, eventId]); // <-- Added eventId
 
     const clearFilters = () => {
         setFrom(daysAgoISO(30));
         setTo(todayISO());
         setUserId("");
+        setEventId(""); // <-- Reset event filter
     };
 
     return (
@@ -89,6 +104,24 @@ export default function ReportsPanel() {
                             className="w-full rounded-xl border border-[#ddcdb8] bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#b07a4f] lg:w-auto"
                         />
                     </label>
+
+                    {/* NEW: Event Filter */}
+                    <label className="grid gap-1.5 text-xs font-semibold text-[#5b4636] sm:col-span-2 lg:col-span-1">
+                        Event
+                        <select
+                            value={eventId}
+                            onChange={e => setEventId(e.target.value)}
+                            className="w-full rounded-xl border border-[#ddcdb8] bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#b07a4f] lg:min-w-[180px] lg:w-auto"
+                        >
+                            <option value="">All events</option>
+                            {events.map(e => (
+                                <option key={e.id} value={e.id}>
+                                    {e.name}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+
                     <label className="grid gap-1.5 text-xs font-semibold text-[#5b4636] sm:col-span-2 lg:col-span-1">
                         Customer
                         <select
@@ -112,7 +145,7 @@ export default function ReportsPanel() {
                         <RefreshCw size={14} /> Refresh
                     </button>
 
-                    {(userId || from !== daysAgoISO(30) || to !== todayISO()) && (
+                    {(userId || eventId || from !== daysAgoISO(30) || to !== todayISO()) && (
                         <button
                             onClick={clearFilters}
                             className="inline-flex w-full items-center justify-center gap-2 text-xs font-semibold text-[#7d3f24] hover:underline sm:col-span-2 sm:w-auto lg:col-span-1"
@@ -168,6 +201,56 @@ export default function ReportsPanel() {
                             sub="Average order value"
                         />
                     </div>
+
+                    {/* Event Performance Section */}
+                    {data.eventSummary && data.eventSummary.length > 0 && (
+                        <div className="rounded-2xl border border-[#eadfce] bg-white p-4 sm:rounded-3xl sm:p-6">
+                            <div className="mb-4 flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[10px] uppercase tracking-[.2em] text-[#8a6d53] sm:tracking-[.24em]">
+                                        Events
+                                    </div>
+                                    <h3 className="serif mt-1 truncate text-lg font-semibold sm:text-xl">
+                                        Event Token Performance
+                                    </h3>
+                                </div>
+                                <QrCode size={18} className="shrink-0 text-[#8a6d53]" />
+                            </div>
+
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="text-left text-[10px] uppercase tracking-[.16em] text-[#8a6d53]">
+                                        <tr className="border-b border-[#eadfce]">
+                                            <th className="py-3 pr-4">Event ID</th>
+                                            <th className="py-3 pr-4">Tokens Issued</th>
+                                            <th className="py-3 pr-4 text-right">Paid Orders</th>
+                                            <th className="py-3 text-right">Revenue Generated</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {data.eventSummary.map(e => (
+                                            <tr key={e.eventId} className="border-b border-[#f5ecdf] last:border-0">
+                                                <td className="py-3 pr-4 font-mono text-xs text-[#7d3f24]">
+                                                    #{e.eventId.slice(-8)}
+                                                </td>
+                                                <td className="py-3 pr-4">
+                                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f1cf8a]/30 px-2.5 py-1 text-xs font-bold text-[#7d3f24]">
+                                                        <Ticket size={12} /> {e.tokensIssued}
+                                                    </span>
+                                                </td>
+                                                <td className="py-3 pr-4 text-right text-xs text-[#5b4636]">
+                                                    {e.paidOrders}
+                                                </td>
+                                                <td className="py-3 text-right font-semibold text-[#1d7a3e]">
+                                                    {currency(e.revenue)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Revenue chart */}
                     <div className="rounded-2xl border border-[#eadfce] bg-white p-4 sm:rounded-3xl sm:p-6">
@@ -264,7 +347,6 @@ export default function ReportsPanel() {
                             </div>
                         ) : (
                             <>
-                                {/* Table on ≥md */}
                                 <div className="hidden overflow-x-auto md:block">
                                     <table className="w-full text-sm">
                                         <thead className="text-left text-[10px] uppercase tracking-[.16em] text-[#8a6d53]">
@@ -302,21 +384,13 @@ export default function ReportsPanel() {
                                     </table>
                                 </div>
 
-                                {/* Card list on <md */}
                                 <div className="grid gap-2.5 md:hidden">
                                     {data.sessions.map(s => (
-                                        <div
-                                            key={s.id}
-                                            className="rounded-2xl border border-[#eadfce] bg-[#faf5ed] p-3"
-                                        >
+                                        <div key={s.id} className="rounded-2xl border border-[#eadfce] bg-[#faf5ed] p-3">
                                             <div className="flex items-start justify-between gap-2">
                                                 <div className="min-w-0">
-                                                    <div className="truncate text-sm font-semibold">
-                                                        {s.username}
-                                                    </div>
-                                                    <div className="mt-0.5 font-mono text-[10px] text-[#8a6d53]">
-                                                        #{s.id.slice(0, 8)}
-                                                    </div>
+                                                    <div className="truncate text-sm font-semibold">{s.username}</div>
+                                                    <div className="mt-0.5 font-mono text-[10px] text-[#8a6d53]">#{s.id.slice(0, 8)}</div>
                                                 </div>
                                                 <StatusPill status={s.status} />
                                             </div>
@@ -327,22 +401,15 @@ export default function ReportsPanel() {
                                                 </span>
                                                 <span className="inline-flex items-center gap-1">
                                                     <Clock size={11} className="text-[#7d3f24]" />
-                                                    {new Date(s.startedAt).toLocaleTimeString([], {
-                                                        hour: "2-digit",
-                                                        minute: "2-digit",
-                                                    })}
+                                                    {new Date(s.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                                                 </span>
                                                 <span className="inline-flex items-center gap-1">
                                                     ⏱ {s.durationSeconds ? formatDuration(s.durationSeconds) : "—"}
                                                 </span>
                                             </div>
                                             <div className="mt-2 flex items-center justify-between border-t border-[#eadfce] pt-2">
-                                                <span className="text-[10px] uppercase tracking-[.16em] text-[#8a6d53]">
-                                                    Amount
-                                                </span>
-                                                <span className="text-sm font-bold">
-                                                    {currency(s.total)}
-                                                </span>
+                                                <span className="text-[10px] uppercase tracking-[.16em] text-[#8a6d53]">Amount</span>
+                                                <span className="text-sm font-bold">{currency(s.total)}</span>
                                             </div>
                                         </div>
                                     ))}
@@ -357,21 +424,14 @@ export default function ReportsPanel() {
 }
 
 /* ---------- Small components ---------- */
-
 function KpiTile({ icon, label, value, sub }) {
     return (
         <div className="rounded-2xl border border-[#eadfce] bg-white p-4 sm:rounded-3xl sm:p-5">
             <div className="flex items-center gap-3">
-                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#f1cf8a]/40 text-[#7d3f24]">
-                    {icon}
-                </div>
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#f1cf8a]/40 text-[#7d3f24]">{icon}</div>
                 <div className="min-w-0">
-                    <div className="text-[10px] uppercase tracking-[.16em] text-[#8a6d53] sm:tracking-[.18em]">
-                        {label}
-                    </div>
-                    <div className="serif mt-0.5 truncate text-xl font-bold leading-tight sm:text-2xl">
-                        {value}
-                    </div>
+                    <div className="text-[10px] uppercase tracking-[.16em] text-[#8a6d53] sm:tracking-[.18em]">{label}</div>
+                    <div className="serif mt-0.5 truncate text-xl font-bold leading-tight sm:text-2xl">{value}</div>
                     <div className="truncate text-[11px] text-[#8a6d53]">{sub}</div>
                 </div>
             </div>
@@ -383,9 +443,7 @@ function TopList({ title, icon, children }) {
     return (
         <div className="rounded-2xl border border-[#eadfce] bg-white p-4 sm:rounded-3xl sm:p-6">
             <div className="mb-3 flex items-center gap-2">
-                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#f1cf8a]/40 text-[#7d3f24]">
-                    {icon}
-                </div>
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#f1cf8a]/40 text-[#7d3f24]">{icon}</div>
                 <h3 className="serif truncate text-base font-semibold sm:text-lg">{title}</h3>
             </div>
             <ul>{children}</ul>
@@ -403,59 +461,31 @@ function StatusPill({ status }) {
         completed: "bg-[#e2f0e5] text-[#1d7a3e]",
         paid: "bg-[#e2f0e5] text-[#1d7a3e]",
     };
-    const label = {
-        "in-progress": "In progress",
-        completed: "Completed",
-        paid: "Paid",
-    }[status] || status;
+    const label = { "in-progress": "In progress", completed: "Completed", paid: "Paid" }[status] || status;
     return (
-        <span
-            className={`inline-flex shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-bold ${map[status] || "bg-[#f4eadc] text-[#8a6d53]"
-                }`}
-        >
+        <span className={`inline-flex shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-bold ${map[status] || "bg-[#f4eadc] text-[#8a6d53]"}`}>
             {label}
         </span>
     );
 }
 
 /* ---------- Pure-SVG bar chart ---------- */
-
 function RevenueChart({ data }) {
     if (!data || data.length === 0) {
-        return (
-            <div className="py-10 text-center text-sm text-[#8a6d53] sm:py-12">
-                No revenue yet in this range.
-            </div>
-        );
+        return <div className="py-10 text-center text-sm text-[#8a6d53] sm:py-12">No revenue yet in this range.</div>;
     }
-
     const maxAmount = Math.max(...data.map(d => d.amount), 1);
-    /* Narrower bars on mobile so more days fit before scrolling */
     const barW = Math.max(10, Math.min(48, Math.floor(900 / data.length) - 6));
-
     return (
         <div className="no-scrollbar flex items-end gap-1.5 overflow-x-auto pb-3 sm:gap-2" style={{ minHeight: 180 }}>
             {data.map(d => {
                 const pct = d.amount / maxAmount;
                 const h = Math.max(6, Math.round(pct * 140));
                 return (
-                    <div
-                        key={d.date}
-                        className="flex shrink-0 flex-col items-center"
-                        style={{ width: barW }}
-                    >
-                        <div className="mb-1 text-[9px] font-semibold text-[#7d3f24] sm:text-[10px]">
-                            £{d.amount}
-                        </div>
-                        <div
-                            className="rounded-t-md bg-gradient-to-t from-[#7d3f24] to-[#f1cf8a] transition-all hover:from-[#5b2e18]"
-                            style={{ height: h, width: barW }}
-                            title={`${d.date}: £${d.amount}`}
-                        />
-                        <div
-                            className="mt-1 origin-top-left rotate-[-40deg] whitespace-nowrap text-[8px] text-[#8a6d53] sm:text-[9px]"
-                            style={{ width: 0 }}
-                        >
+                    <div key={d.date} className="flex shrink-0 flex-col items-center" style={{ width: barW }}>
+                        <div className="mb-1 text-[9px] font-semibold text-[#7d3f24] sm:text-[10px]">£{d.amount}</div>
+                        <div className="rounded-t-md bg-gradient-to-t from-[#7d3f24] to-[#f1cf8a] transition-all hover:from-[#5b2e18]" style={{ height: h, width: barW }} title={`${d.date}: £${d.amount}`} />
+                        <div className="mt-1 origin-top-left rotate-[-40deg] whitespace-nowrap text-[8px] text-[#8a6d53] sm:text-[9px]" style={{ width: 0 }}>
                             {d.date.slice(5)}
                         </div>
                     </div>
