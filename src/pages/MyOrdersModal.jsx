@@ -98,10 +98,10 @@ export default function MyOrdersModal({ onClose, onPay }) {
                                                 <div className="min-w-0">
                                                     <div className="truncate text-[10px] uppercase tracking-[.16em] text-[#8a6d53] sm:tracking-[.18em]">Order #{o.id.slice(0, 8)}</div>
 
-                                                    {/* USER TOKEN DISPLAY */}
+                                                    {/* UPDATED: TOKEN WITH EVENT NAME */}
                                                     {o.tokenNumber && (
                                                         <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#f1cf8a]/30 border border-[#f1cf8a]/50 px-2.5 py-0.5 text-[11px] font-bold text-[#7d3f24]">
-                                                            🎟️ Your Event Token: #{o.tokenNumber}
+                                                            🎟️ {o.eventName ? `${o.eventName} - ` : ""}Token #{o.tokenNumber}
                                                         </div>
                                                     )}
 

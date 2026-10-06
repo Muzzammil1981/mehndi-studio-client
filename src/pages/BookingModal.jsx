@@ -6,8 +6,6 @@ import { currency } from "../lib/format";
 export default function BookingModal({ cart, total, onClose, onSuccess }) {
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    // Check if this is an event order
-    // (If any item in the cart has an eventId, we treat it as an event order)
     const eventId = cart.length > 0 ? cart[0].eventId : null;
     const isEventOrder = Boolean(eventId);
 
@@ -33,18 +31,23 @@ export default function BookingModal({ cart, total, onClose, onSuccess }) {
             };
 
             if (isEventOrder) {
-                // For events, we don't ask for a date/time.
-                // We just send the current date/time as the request time.
                 payload.eventId = eventId;
                 payload.requestedDate = new Date().toISOString().split('T')[0];
                 payload.requestedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             } else {
-                // Normal order
                 payload.requestedDate = form.requestedDate;
                 payload.requestedTime = form.requestedTime;
             }
 
             const { data } = await api.post("/api/orders", payload);
+
+            // If it's an event order, immediately trigger onSuccess to go to Payment
+            if (isEventOrder) {
+                onSuccess?.(data);
+                return;
+            }
+
+            // For normal orders, show the local success screen
             setDone(data);
             onSuccess?.(data);
         } catch (err) {
@@ -87,16 +90,9 @@ export default function BookingModal({ cart, total, onClose, onSuccess }) {
                 </div>
 
                 {done ? (
-                    /* Success state */
+                    /* Success state (Only for normal orders) */
                     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-center sm:p-6">
                         <CheckCircle2 className="mx-auto text-[#1d7a3e]" size={44} />
-
-                        {done.tokenNumber && (
-                            <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#f1cf8a]/30 border border-[#f1cf8a]/50 px-4 py-2 text-sm font-bold text-[#7d3f24]">
-                                🎟️ Your Event Token: #{done.tokenNumber}
-                            </div>
-                        )}
-
                         <p className="mt-4 text-sm text-[#5b4636] sm:text-base">
                             Your request for <strong>{done.requestedDate}</strong> at{" "}
                             <strong>{done.requestedTime}</strong> has been sent to the studio.
@@ -117,14 +113,13 @@ export default function BookingModal({ cart, total, onClose, onSuccess }) {
                         onSubmit={submit}
                         className="grid min-h-0 flex-1 gap-3.5 overflow-y-auto overscroll-contain p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:gap-4 sm:p-6"
                     >
-
                         {isEventOrder ? (
                             <div className="rounded-xl bg-[#fdf3d6] border border-[#f0d98c] p-4 text-sm text-[#8a6d1c] mb-1">
                                 <div className="font-semibold flex items-center gap-2">
                                     <Sparkles size={16} /> First Come, First Serve
                                 </div>
                                 <p className="mt-1 text-xs">
-                                    Your token number will be generated automatically based on the current order queue.
+                                    Your token number will be generated automatically once your payment is confirmed.
                                 </p>
                             </div>
                         ) : (
@@ -187,10 +182,10 @@ export default function BookingModal({ cart, total, onClose, onSuccess }) {
                         >
                             {busy ? (
                                 <>
-                                    <Loader2 size={15} className="animate-spin" /> Sending…
+                                    <Loader2 size={15} className="animate-spin" /> Processing…
                                 </>
                             ) : (
-                                isEventOrder ? "Generate Token & Place Order" : "Send appointment request"
+                                isEventOrder ? "Continue to Payment" : "Send appointment request"
                             )}
                         </button>
                     </form>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import {
     LogOut, Image as ImageIcon, Users, Bell, Plus, X, Upload, Loader2,
-    Calendar, Clock, CheckCircle2, XCircle, ShieldAlert, Play, Square, BarChart3, LayoutGrid, Trash2, QrCode, Search
+    Calendar, Clock, CheckCircle2, XCircle, ShieldAlert, Play, Square, BarChart3, LayoutGrid, Trash2, QrCode, Search, Monitor,
+    Timer
 } from "lucide-react";
 import { io } from "socket.io-client";
 import GoogleDriveCard from "./GoogleDriveCard";
@@ -222,7 +223,7 @@ function EventsManager() {
     const [selectedDesigns, setSelectedDesigns] = useState([]);
     const [selectAll, setSelectAll] = useState(false);
     const [priceOverrides, setPriceOverrides] = useState({});
-
+    const [monitorEvent, setMonitorEvent] = useState(null);
     useEffect(() => {
         fetchEvents();
         fetchDesigns();
@@ -436,8 +437,16 @@ function EventsManager() {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <button onClick={() => setQrEvent(e)} className="text-[#7d3f24] p-3 hover:bg-[#f4eadc] rounded-full transition" title="Generate QR Code"><QrCode size={18} /></button>
-                                    <button onClick={() => deleteEvent(e.id)} className="text-red-500 p-3 hover:bg-red-50 rounded-full transition" title="Delete Event"><Trash2 size={18} /></button>
+                                    <button onClick={() => setQrEvent(e)} className="text-[#7d3f24] p-3 hover:bg-[#f4eadc] rounded-full transition" title="Generate QR Code">
+                                        <QrCode size={18} />
+                                    </button>
+                                    {/* ADD MONITOR BUTTON */}
+                                    <button onClick={() => setMonitorEvent(e)} className="text-[#1d7a3e] p-3 hover:bg-[#e2f0e5] rounded-full transition" title="Monitor Display Link">
+                                        <Monitor size={18} />
+                                    </button>
+                                    <button onClick={() => deleteEvent(e.id)} className="text-red-500 p-3 hover:bg-red-50 rounded-full transition" title="Delete Event">
+                                        <Trash2 size={18} />
+                                    </button>
                                 </div>
                             </div>
                         );
@@ -458,6 +467,55 @@ function EventsManager() {
                             <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(`${window.location.origin}/?event=${qrEvent.id}`)}`} alt="Event QR Code" className="w-48 h-48 mx-auto" />
                         </div>
                         <p className="text-[10px] text-[#8a6d53] mt-4 break-all bg-[#faf5ed] p-2 rounded-lg">{window.location.origin}/?event={qrEvent.id}</p>
+                    </div>
+                </div>
+            )}
+
+            {/* MONITOR LINK MODAL */}
+            {monitorEvent && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#20140e]/70 backdrop-blur-sm p-4" onMouseDown={() => setMonitorEvent(null)}>
+                    <div onMouseDown={e => e.stopPropagation()} className="bg-white rounded-3xl p-8 max-w-lg w-full text-center shadow-2xl">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="serif text-xl font-semibold text-[#24170f]">Monitor Display</h3>
+                            <button onClick={() => setMonitorEvent(null)} className="text-[#8a6d53] hover:text-[#24170f]"><X size={20} /></button>
+                        </div>
+
+                        <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-[#e2f0e5] text-[#1d7a3e]">
+                            <Monitor size={32} />
+                        </div>
+
+                        <p className="text-sm text-[#5b4636] mb-2">
+                            Open this link on a <strong>TV or monitor outside your studio</strong> to show live queue status.
+                        </p>
+                        <p className="text-xs text-[#8a6d53] mb-6">
+                            Customers will see: Now Serving, Up Next, and Recently Completed tokens for <strong>{monitorEvent.name}</strong>.
+                        </p>
+
+                        <div className="rounded-2xl bg-[#faf5ed] border border-[#eadfce] p-4 mb-4">
+                            <code className="text-xs break-all text-[#7d3f24] font-mono">
+                                {window.location.origin}/monitor?event={monitorEvent.id}
+                            </code>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <button
+                                onClick={() => {
+                                    navigator.clipboard.writeText(`${window.location.origin}/monitor?event=${monitorEvent.id}`);
+                                    alert("Monitor link copied!");
+                                }}
+                                className="rounded-full bg-[#f4eadc] text-[#7d3f24] py-3 text-sm font-semibold hover:bg-[#eaddc8] transition"
+                            >
+                                Copy Link
+                            </button>
+                            <a
+                                href={`/monitor?event=${monitorEvent.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="rounded-full bg-[#1d7a3e] text-white py-3 text-sm font-semibold hover:bg-[#155c2d] transition text-center"
+                            >
+                                Open Preview
+                            </a>
+                        </div>
                     </div>
                 </div>
             )}
@@ -597,8 +655,12 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
 
             {order.status === "in-progress" && (
                 <div className="mt-4 space-y-3">
-                    <div className="flex items-center gap-2 rounded-xl bg-[#fdf3d6] px-3 py-2 text-xs text-[#8a6d1c]"><Clock size={13} /> Session started at {new Date(order.startedAt).toLocaleTimeString()}</div>
-                    <button onClick={endWork} disabled={verifyBusy} className="flex w-full items-center justify-center gap-2 rounded-full bg-[#1d7a3e] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"><Square size={14} /> End session</button>
+                    {/* LIVE TIMER */}
+                    <AdminLiveTimer startedAt={order.startedAt} />
+
+                    <button onClick={endWork} disabled={verifyBusy} className="flex w-full items-center justify-center gap-2 rounded-full bg-[#1d7a3e] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto">
+                        <Square size={14} /> End session
+                    </button>
                 </div>
             )}
 
@@ -651,7 +713,47 @@ function ImageLightbox({ src, alt, onClose }) {
         </div>
     );
 }
+/* ---------- Admin: Live Session Timer ---------- */
+function AdminLiveTimer({ startedAt }) {
+    const [now, setNow] = useState(Date.now());
 
+    useEffect(() => {
+        const t = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
+
+    if (!startedAt) return null;
+
+    const elapsed = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
+    const h = Math.floor(elapsed / 3600);
+    const m = Math.floor((elapsed % 3600) / 60);
+    const s = elapsed % 60;
+
+    const timeString = h > 0
+        ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+        : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+
+    return (
+        <div className="flex items-center gap-4 rounded-2xl border border-[#1d7a3e]/30 bg-gradient-to-r from-[#e2f0e5] via-[#eaf7ee] to-[#f4fbf6] px-4 py-3">
+            <div className="relative flex h-3 w-3 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#1d7a3e] opacity-70" />
+                <span className="relative inline-flex h-3 w-3 rounded-full bg-[#1d7a3e]" />
+            </div>
+            <Timer size={22} className="shrink-0 text-[#1d7a3e]" />
+            <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-[#1d7a3e]/80">
+                    Session in progress
+                </div>
+                <div className="serif text-2xl font-bold tabular-nums text-[#1d7a3e] leading-none mt-0.5">
+                    {timeString}
+                </div>
+                <div className="text-[10px] text-[#4a7a5c] mt-0.5">
+                    Started at {new Date(startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </div>
+            </div>
+        </div>
+    );
+}
 /* ---------- Order action modal ---------- */
 function OrderActionModal({ order, mode, onClose, onDone }) {
     const [adminNote, setAdminNote] = useState("");

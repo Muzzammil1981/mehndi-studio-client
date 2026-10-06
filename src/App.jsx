@@ -18,6 +18,7 @@ import { playNotificationSound, primeAudioOnFirstGesture } from "./lib/notify";
 import { imageUrl, currency } from "./lib/format";
 import SafeImage from "./components/SafeImage";
 import Catalog from "./components/Catalog";
+import MonitorPage from "./pages/MonitorPage";
 
 const API = API_BASE;
 
@@ -33,11 +34,12 @@ const seedCategories = [
 
 function App() {
   const isAdminRoute = window.location.pathname.startsWith("/admin");
+  const isMonitorRoute = window.location.pathname.startsWith("/monitor");
   const [adminUser, setAdminUser] = useState(null);
   const [checking, setChecking] = useState(true);
 
   const [activeEvent, setActiveEvent] = useState(null);
-  const [checkingEvent, setCheckingEvent] = useState(!isAdminRoute);
+  const [checkingEvent, setCheckingEvent] = useState(!isAdminRoute && !isMonitorRoute);
 
   useEffect(() => {
     if (!isAdminRoute) { setChecking(false); return; }
@@ -55,7 +57,7 @@ function App() {
      - Otherwise → fetch globally active event
   ========================================================= */
   useEffect(() => {
-    if (isAdminRoute) return;
+    if (isAdminRoute || isMonitorRoute) return;
 
     const urlParams = new URLSearchParams(window.location.search);
     const eventIdFromUrl = urlParams.get("event");
@@ -84,7 +86,7 @@ function App() {
     };
 
     loadEvent();
-  }, [isAdminRoute]);
+  }, [isAdminRoute, isMonitorRoute]);
 
   const logout = () => {
     localStorage.removeItem("mehndi-token");
@@ -92,6 +94,13 @@ function App() {
   };
 
   useEffect(() => { primeAudioOnFirstGesture(); }, []);
+
+  // NEW: Render MonitorPage
+  if (isMonitorRoute) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const eventId = urlParams.get("event");
+    return <MonitorPage eventId={eventId} />;
+  }
 
   if (isAdminRoute) {
     if (checking) {
@@ -233,7 +242,31 @@ function PublicCatalog({ activeEvent }) {
       {cartOpen && user && <CartDrawer cart={cart} setCart={setCart} total={cartTotal} selectedItems={selectedItems} toggleItem={toggleItem} toggleAll={toggleAll} onClose={() => setCartOpen(false)} onProceed={() => { setCartOpen(false); setBookingOpen(true); }} />}
       {authOpen && <AuthModal reason={pendingDesign ? "Create an account or sign in to add this design to your selection." : null} onClose={() => { setAuthOpen(false); setPendingDesign(null); }} onSuccess={handleAuthSuccess} />}
       {accountOpen && user && <AccountModal user={user} onClose={() => setAccountOpen(false)} onSignOut={userLogout} />}
-      {bookingOpen && user && selectedCartItems.length > 0 && <BookingModal cart={selectedCartItems} total={selectedTotal} onClose={() => setBookingOpen(false)} onSuccess={() => { const remaining = cart.filter(i => !selectedItems.has(i.id)); setCart(remaining); setSelectedItems(new Set()); setBookingOpen(false); setOrdersOpen(true); }} />}
+      {/* {bookingOpen && user && selectedCartItems.length > 0 && <BookingModal cart={selectedCartItems} total={selectedTotal} onClose={() => setBookingOpen(false)} onSuccess={() => { const remaining = cart.filter(i => !selectedItems.has(i.id)); setCart(remaining); setSelectedItems(new Set()); setBookingOpen(false); setOrdersOpen(true); }} />} */}
+
+// Inside PublicCatalog component, find the BookingModal render:
+
+      {bookingOpen && user && selectedCartItems.length > 0 && (
+        <BookingModal
+          cart={selectedCartItems}
+          total={selectedTotal}
+          onClose={() => setBookingOpen(false)}
+          onSuccess={(order) => {
+            const remaining = cart.filter(i => !selectedItems.has(i.id));
+            setCart(remaining);
+            setSelectedItems(new Set());
+            setBookingOpen(false);
+
+            // NEW: If it's an event order (auto-approved), go straight to payment
+            if (order.eventId) {
+              setPaymentOrder(order);
+            } else {
+              setOrdersOpen(true);
+            }
+          }}
+        />
+      )}
+
       {ordersOpen && user && <MyOrdersModal onClose={() => setOrdersOpen(false)} onPay={(order) => { setOrdersOpen(false); setPaymentOrder(order); }} />}
       {paymentOrder && user && <PaymentModal order={paymentOrder} onClose={() => setPaymentOrder(null)} onPaid={() => { setPaymentOrder(null); setOrdersOpen(true); }} />}
     </div>
