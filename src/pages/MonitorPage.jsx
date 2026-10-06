@@ -135,7 +135,7 @@ export default function MonitorPage({ eventId }) {
     const base = current?.estimatedSeconds > 0 ? current.estimatedSeconds : BASE_SECONDS;
     const { total, extensions, percent, pending } = getProgress(elapsed, base);
     const imgUrl = current?.image ? buildImageUrl(current.image) : "";
-    const ringColor = extensions > 0 ? "#f1cf8a" : "#4ade80";
+    const ringColor = "#22c55e"; // completed = green (pending = red)
 
     return (
         <div className="min-h-screen bg-[#120a06] text-white relative overflow-hidden">
@@ -236,13 +236,18 @@ export default function MonitorPage({ eventId }) {
                                 >
                                     {imgUrl && (
                                         <>
-                                            {/* pending: dim greyscale */}
-                                            <img src={imgUrl} alt="" className="absolute inset-0 h-full w-full object-cover grayscale brightness-[.35]" />
+                                            {/* pending: dim image with red tint */}
+                                            <img src={imgUrl} alt="" className="absolute inset-0 h-full w-full object-cover grayscale brightness-[.4]" />
+                                            <div className="absolute inset-0 bg-red-600/35" />
                                             {/* completed: full colour, revealed from the bottom */}
                                             <img
                                                 src={imgUrl}
                                                 alt=""
                                                 className="absolute inset-0 h-full w-full object-cover transition-[clip-path] duration-1000 ease-linear"
+                                                style={{ clipPath: `inset(${100 - percent}% 0 0 0)` }}
+                                            />
+                                            <div
+                                                className="absolute inset-0 bg-green-500/15 transition-[clip-path] duration-1000 ease-linear"
                                                 style={{ clipPath: `inset(${100 - percent}% 0 0 0)` }}
                                             />
                                             {/* leading edge line */}
@@ -260,7 +265,7 @@ export default function MonitorPage({ eventId }) {
                                 </div>
 
                                 <figcaption className="mt-4">
-                                    <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                                    <div className="h-2.5 w-full rounded-full bg-red-500/70 overflow-hidden">
                                         <div className="h-full rounded-full transition-[width] duration-1000 ease-linear" style={{ width: `${percent}%`, background: ringColor }} />
                                     </div>
                                     <div className="mt-3 grid grid-cols-2 gap-3 text-center">
@@ -268,9 +273,9 @@ export default function MonitorPage({ eventId }) {
                                             <div className="text-xs text-[#4ade80]/80">Completed</div>
                                             <div className="serif text-2xl font-bold tabular-nums text-[#4ade80]">{formatTimer(elapsed)}</div>
                                         </div>
-                                        <div className="rounded-xl border border-[#f1cf8a]/25 bg-[#f1cf8a]/5 py-2">
-                                            <div className="text-xs text-[#f1cf8a]/80">Pending</div>
-                                            <div className="serif text-2xl font-bold tabular-nums text-[#f1cf8a]">{formatTimer(pending)}</div>
+                                        <div className="rounded-xl border border-red-500/35 bg-red-500/10 py-2">
+                                            <div className="text-xs text-red-300/90">Pending</div>
+                                            <div className="serif text-2xl font-bold tabular-nums text-red-400">{formatTimer(pending)}</div>
                                         </div>
                                     </div>
                                     <div className="mt-3 text-center text-xs text-[#a88b6f]">
