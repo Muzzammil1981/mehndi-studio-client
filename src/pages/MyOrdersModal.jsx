@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import {
     X, Calendar, Clock, Loader2, CheckCircle2, XCircle, Hourglass, CreditCard,
-    ShieldAlert, AlertCircle, Maximize2, Sparkles, PartyPopper, Lock,
+    ShieldAlert, AlertCircle, Maximize2, Sparkles, PartyPopper, Lock, Wallet, RefreshCw,
+    Pencil, Palette, Coins, Users,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { imageUrl, currency } from "../lib/format";
@@ -22,18 +23,27 @@ const STATUS_STYLES = {
     paid: { icon: <CheckCircle2 size={13} />, label: "Paid ✓", cls: "bg-[#e2f0e5] text-[#1d7a3e]" },
     "in-progress": { icon: <Sparkles size={13} />, label: "In progress 🎨", cls: "bg-[#fdf3d6] text-[#8a6d1c]" },
     completed: { icon: <CheckCircle2 size={13} />, label: "Ready ✓", cls: "bg-[#e2f0e5] text-[#1d7a3e]" },
+    "custom-pending": { icon: <Palette size={13} />, label: "Awaiting studio quote", cls: "bg-[#fdf9ef] text-[#7d3f24] border border-[#f1cf8a]" },
+    "quote-proposed": { icon: <Coins size={13} />, label: "Counter-offer received", cls: "bg-[#fdf3d6] text-[#8a6d1c]" },
 };
 
-export default function MyOrdersModal({ onClose, onPay }) {
+const PAYMENT_BADGE = {
+    upi: { label: "📱 UPI", cls: "border-[#1d7a3e]/30 bg-[#e2f0e5] text-[#1d7a3e]" },
+    card: { label: "💳 Card", cls: "border-[#2a3a7d]/30 bg-[#e6e8f7] text-[#2a3a7d]" },
+    cash: { label: "💵 Cash", cls: "border-[#8a6d1c]/30 bg-[#fdf3d6] text-[#8a6d1c]" },
+};
+
+export default function MyOrdersModal({ onClose, onPay, onModify }) {
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [lightbox, setLightbox] = useState(null);
+    const [responding, setResponding] = useState(null);
 
     const load = (silent = false) => {
         if (!silent) setLoading(true);
         setError("");
-        api.get("/api/orders")
+        api.get(`/api/orders?t=${Date.now()}`)
             .then(({ data }) => setOrders(Array.isArray(data) ? data : []))
             .catch((err) => setError(err.response?.data?.message || "Could not load orders"))
             .finally(() => setLoading(false));
@@ -41,7 +51,7 @@ export default function MyOrdersModal({ onClose, onPay }) {
 
     useEffect(() => { load(); }, []);
     useEffect(() => {
-        const handler = () => load();
+        const handler = () => load(true);
         window.addEventListener("mehndi:order-update", handler);
         return () => window.removeEventListener("mehndi:order-update", handler);
     }, []);
@@ -52,6 +62,18 @@ export default function MyOrdersModal({ onClose, onPay }) {
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
     }, [lightbox]);
+
+    const respondToQuote = async (orderId, action) => {
+        setResponding(orderId);
+        try {
+            await api.patch(`/api/orders/${orderId}/quote-response`, { action });
+            load(true);
+        } catch (err) {
+            alert(err.response?.data?.message || "Failed to respond");
+        } finally {
+            setResponding(null);
+        }
+    };
 
     return (
         <>
@@ -90,19 +112,36 @@ export default function MyOrdersModal({ onClose, onPay }) {
                                     const isPaid = o.status === "paid";
                                     const isInProgress = o.status === "in-progress";
                                     const isCompleted = o.status === "completed";
-                                    const blurThumb = isPending || isAwaiting;
+                                    const isCustom = o.type === "custom";
+                                    const isQuoteProposed = o.status === "quote-proposed";
+                                    const isCustomPending = o.status === "custom-pending";
+                                    const blurThumb = isPending || isAwaiting || isCustomPending || isQuoteProposed;
+
+                                    const isCounterPayment = ["cash", "card"].includes(o.paymentMethod);
+                                    const payBadge = PAYMENT_BADGE[o.paymentMethod];
+
+                                    // BUG FIX: hide Modify for group orders (backend rejects it).
+                                    const canModify = !isCustom && !o.isGroup && ["pending", "approved", "awaiting-verification"].includes(o.status);
+                                    const isResponding = responding === o.id;
 
                                     return (
-                                        <div key={o.id} className="rounded-2xl border border-[#eadfce] bg-white p-3.5 sm:p-4">
+                                        <div key={o.id} className={`rounded-2xl border bg-white p-3.5 sm:p-4 ${isCustom && (isCustomPending || isQuoteProposed) ? "border-2 border-[#f1cf8a]" : "border-[#eadfce]"}`}>
                                             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                                                 <div className="min-w-0">
                                                     <div className="truncate text-[10px] uppercase tracking-[.16em] text-[#8a6d53] sm:tracking-[.18em]">Order #{o.id.slice(0, 8)}</div>
 
-                                                    {/* UPDATED: TOKEN WITH EVENT NAME */}
-                                                    {o.tokenNumber && (
+                                                    {/* Token badge (single order) */}
+                                                    {o.tokenNumber && !o.isGroup && (
                                                         <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#f1cf8a]/30 border border-[#f1cf8a]/50 px-2.5 py-0.5 text-[11px] font-bold text-[#7d3f24]">
                                                             🎟️ {o.eventName ? `${o.eventName} - ` : ""}Token #{o.tokenNumber}
                                                         </div>
+                                                    )}
+
+                                                    {/* Payment method badge */}
+                                                    {payBadge && (
+                                                        <span className={`ml-2 mt-1 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${payBadge.cls}`}>
+                                                            {payBadge.label}
+                                                        </span>
                                                     )}
 
                                                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
@@ -114,40 +153,175 @@ export default function MyOrdersModal({ onClose, onPay }) {
                                                 <span className={`inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold sm:text-xs ${S.cls}`}>{S.icon} {S.label}</span>
                                             </div>
 
-                                            <div className="mt-3 flex flex-wrap gap-2.5 sm:mt-4 sm:gap-3">
-                                                {o.items.map((it, idx) =>
-                                                    blurThumb ? (
-                                                        <div key={idx} title="Revealed after studio confirms" className="relative grid h-24 w-20 place-items-center overflow-hidden rounded-xl border border-[#e6d3bd] bg-gradient-to-br from-[#f3e6d5] via-[#ead7bf] to-[#dcc3a3] sm:h-32 sm:w-28 sm:rounded-2xl">
-                                                            <div className="absolute inset-0 opacity-40" style={{ backgroundImage: "radial-gradient(#9b6d43 1px, transparent 1px)", backgroundSize: "10px 10px" }} />
-                                                            <div className="relative flex flex-col items-center gap-1.5 px-1 text-center">
-                                                                <div className="grid h-9 w-9 place-items-center rounded-full bg-white/85 shadow sm:h-10 sm:w-10">
-                                                                    {isPending ? <Lock size={16} className="text-[#7d3f24]" /> : <ShieldAlert size={16} className="text-[#8a6d1c]" />}
+                                            {/* Group order — member tokens */}
+                                            {/* Group order — member tokens with their designs */}
+                                            {o.isGroup && o.members?.length > 0 && (
+                                                <div className="mt-3 rounded-2xl border border-[#f1cf8a] bg-[#fdf9ef] p-4">
+                                                    <div className="mb-3 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-[#7d3f24]">
+                                                        <span><Users size={12} className="mr-1 inline" /> Group of {o.members.length}</span>
+                                                        <span>{currency(o.total)} total</span>
+                                                    </div>
+                                                    <div className="space-y-2.5">
+                                                        {o.members.map(m => {
+                                                            const mStatus = m.status || "pending";
+                                                            const memberItems = Array.isArray(m.items) ? m.items : [];
+                                                            return (
+                                                                <div key={m.memberId} className="rounded-xl border border-[#eadfce] bg-white p-3">
+                                                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                                                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                                                                            {m.tokenNumber ? (
+                                                                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#f1cf8a]/40 border border-[#f1cf8a]/60 px-2.5 py-0.5 text-[11px] font-bold text-[#7d3f24]">
+                                                                                    🎟️ #{m.tokenNumber}
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="inline-flex shrink-0 items-center rounded-full bg-[#f4eadc] px-2.5 py-0.5 text-[10px] font-semibold text-[#8a6d53]">
+                                                                                    Awaiting
+                                                                                </span>
+                                                                            )}
+                                                                            <span className="truncate text-sm font-semibold">{m.name}</span>
+                                                                            {mStatus === "in-progress" && <MemberInlineTimer startedAt={m.startedAt} />}
+                                                                            {mStatus === "completed" && (
+                                                                                <span className="shrink-0 rounded-full bg-[#e2f0e5] px-2 py-0.5 text-[10px] font-bold text-[#1d7a3e]">
+                                                                                    ✓ Done {formatDuration(m.durationSeconds)}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <span className="shrink-0 text-xs font-semibold text-[#7d3f24]">{currency(m.subtotal)}</span>
+                                                                    </div>
+
+                                                                    {/* Member's assigned designs */}
+                                                                    {memberItems.length > 0 && (
+                                                                        <div className="mt-2 flex flex-wrap gap-1.5">
+                                                                            {memberItems.map((it, idx) =>
+                                                                                blurThumb ? (
+                                                                                    <div key={idx} title="Revealed after studio confirms" className="grid h-14 w-12 place-items-center overflow-hidden rounded-lg border border-[#e6d3bd] bg-gradient-to-br from-[#f3e6d5] via-[#ead7bf] to-[#dcc3a3] sm:h-16 sm:w-14">
+                                                                                        <Lock size={12} className="text-[#7d3f24]" />
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <button
+                                                                                        key={idx}
+                                                                                        type="button"
+                                                                                        onClick={() => setLightbox({ src: imageUrl(it.image), alt: it.name })}
+                                                                                        className="group relative h-14 w-12 cursor-zoom-in overflow-hidden rounded-lg border border-[#eadfce] bg-[#eadcc9] transition hover:ring-2 hover:ring-[#7d3f24] sm:h-16 sm:w-14"
+                                                                                        title={`${it.qty}× ${it.name}`}
+                                                                                    >
+                                                                                        <img src={imageUrl(it.image, "thumb")} alt={it.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                                                                                    </button>
+                                                                                )
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Show the item names compactly */}
+                                                                    {memberItems.length > 0 && !blurThumb && (
+                                                                        <div className="mt-1.5 space-y-0.5 text-[10px] text-[#8a6d53]">
+                                                                            {memberItems.map((it, idx) => (
+                                                                                <div key={idx} className="truncate">{it.qty}× {it.name}</div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
-                                                                <span className="line-clamp-2 text-[9px] font-semibold leading-tight text-[#7d3f24] sm:text-[10px]">{it.name}</span>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Custom order block */}
+                                            {isCustom ? (
+                                                <div className="mt-3 rounded-2xl border-2 border-dashed border-[#f1cf8a] bg-[#fdf9ef] p-4">
+                                                    <div className="flex items-start gap-3">
+                                                        {o.customImage && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setLightbox({ src: imageUrl(o.customImage), alt: "Your reference" })}
+                                                                className="h-20 w-16 shrink-0 overflow-hidden rounded-xl border border-[#eadfce] bg-white transition hover:ring-2 hover:ring-[#7d3f24]"
+                                                            >
+                                                                <img src={imageUrl(o.customImage)} alt="Reference" className="h-full w-full object-cover" />
+                                                            </button>
+                                                        )}
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="text-[10px] font-bold uppercase tracking-widest text-[#7d3f24]">🎨 Custom design request</div>
+                                                            <div className="mt-1 line-clamp-3 text-xs text-[#5b4636] whitespace-pre-wrap">{o.customDescription}</div>
+                                                            <div className="mt-2 flex flex-wrap gap-2">
+                                                                <span className="rounded-full bg-[#f1cf8a]/40 px-2.5 py-0.5 text-[10px] font-bold text-[#7d3f24]">
+                                                                    Your price: {currency(o.suggestedPrice)}
+                                                                </span>
+                                                                {o.quotedPrice && (
+                                                                    <span className="rounded-full bg-[#fdf3d6] px-2.5 py-0.5 text-[10px] font-bold text-[#8a6d1c]">
+                                                                        Studio: {currency(o.quotedPrice)}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         </div>
-                                                    ) : (
-                                                        <button key={idx} type="button" onClick={() => setLightbox({ src: imageUrl(it.image), alt: it.name })} className="group relative h-24 w-20 cursor-zoom-in overflow-hidden rounded-xl border border-[#eadfce] bg-[#eadcc9] transition hover:ring-2 hover:ring-[#7d3f24] sm:h-32 sm:w-28 sm:rounded-2xl" title={`Click to view ${it.name}`}>
-                                                            <img src={imageUrl(it.image)} alt={it.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                                                            <div className="absolute inset-0 hidden flex-col items-center justify-end bg-gradient-to-t from-black/70 to-transparent pb-2 opacity-0 transition group-hover:opacity-100 sm:flex">
-                                                                <Maximize2 size={14} className="text-white" />
-                                                                <span className="mt-0.5 text-[10px] font-semibold text-white">Enlarge</span>
+                                                    </div>
+                                                </div>
+                                            ) : o.isGroup ? null : (
+                                                <div className="mt-3 flex flex-wrap gap-2.5 sm:mt-4 sm:gap-3">
+                                                    {o.items.map((it, idx) =>
+                                                        blurThumb ? (
+                                                            <div key={idx} title="Revealed after studio confirms" className="relative grid h-24 w-20 place-items-center overflow-hidden rounded-xl border border-[#e6d3bd] bg-gradient-to-br from-[#f3e6d5] via-[#ead7bf] to-[#dcc3a3] sm:h-32 sm:w-28 sm:rounded-2xl">
+                                                                <div className="absolute inset-0 opacity-40" style={{ backgroundImage: "radial-gradient(#9b6d43 1px, transparent 1px)", backgroundSize: "10px 10px" }} />
+                                                                <div className="relative flex flex-col items-center gap-1.5 px-1 text-center">
+                                                                    <div className="grid h-9 w-9 place-items-center rounded-full bg-white/85 shadow sm:h-10 sm:w-10">
+                                                                        {isPending ? <Lock size={16} className="text-[#7d3f24]" /> : <ShieldAlert size={16} className="text-[#8a6d1c]" />}
+                                                                    </div>
+                                                                    <span className="line-clamp-2 text-[9px] font-semibold leading-tight text-[#7d3f24] sm:text-[10px]">{it.name}</span>
+                                                                </div>
                                                             </div>
-                                                        </button>
-                                                    )
-                                                )}
-                                            </div>
+                                                        ) : (
+                                                            <button key={idx} type="button" onClick={() => setLightbox({ src: imageUrl(it.image), alt: it.name })} className="group relative h-24 w-20 cursor-zoom-in overflow-hidden rounded-xl border border-[#eadfce] bg-[#eadcc9] transition hover:ring-2 hover:ring-[#7d3f24] sm:h-32 sm:w-28 sm:rounded-2xl" title={`Click to view ${it.name}`}>
+                                                                <img src={imageUrl(it.image)} alt={it.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                                                                <div className="absolute inset-0 hidden flex-col items-center justify-end bg-gradient-to-t from-black/70 to-transparent pb-2 opacity-0 transition group-hover:opacity-100 sm:flex">
+                                                                    <Maximize2 size={14} className="text-white" />
+                                                                    <span className="mt-0.5 text-[10px] font-semibold text-white">Enlarge</span>
+                                                                </div>
+                                                            </button>
+                                                        )
+                                                    )}
+                                                </div>
+                                            )}
 
-                                            {isPending && (
+                                            {isPending && !isCustom && (
                                                 <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#f0d9b5] bg-[#fff6e6] px-3 py-2.5 text-[11px] font-semibold leading-5 text-[#8a5a1c]">
                                                     <Hourglass size={14} className="mt-0.5 shrink-0" />
                                                     <span>Awaiting admin approval — designs revealed once confirmed.</span>
                                                 </div>
                                             )}
+
+                                            {isCustomPending && (
+                                                <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#f0d9b5] bg-[#fff6e6] px-3 py-2.5 text-[11px] font-semibold leading-5 text-[#8a5a1c]">
+                                                    <Palette size={14} className="mt-0.5 shrink-0" />
+                                                    <span>Waiting for the studio to review your custom design and respond to your price.</span>
+                                                </div>
+                                            )}
+
+                                            {isQuoteProposed && (
+                                                <div className="mt-3 rounded-2xl border border-[#f0d98c] bg-gradient-to-br from-[#fdf3d6] to-[#fff8e5] px-4 py-3">
+                                                    <div className="text-sm font-bold text-[#8a6d1c]">
+                                                        Studio proposed <span className="serif text-xl">{currency(o.quotedPrice)}</span>
+                                                    </div>
+                                                    <div className="mt-1 text-xs text-[#8a6d1c]">
+                                                        {o.adminNote || "Review and accept to continue, or decline if you'd like a different price."}
+                                                    </div>
+                                                </div>
+                                            )}
+
                                             {isAwaiting && (
                                                 <div className="mt-3 break-words rounded-xl bg-[#fdf3d6] px-3 py-2 text-[11px] font-semibold text-[#8a6d1c]">Payment submitted (UTR: <span className="font-mono">{o.utr}</span>). Awaiting studio verification.</div>
                                             )}
-                                            {isInProgress && <LiveTimer startedAt={o.startedAt} />}
+
+                                            {isInProgress && !o.isGroup && <LiveTimer startedAt={o.startedAt} />}
+
+                                            {isInProgress && o.isGroup && (
+                                                <div className="mt-3 flex items-center gap-3 rounded-2xl border border-[#f0d98c] bg-gradient-to-br from-[#fdf3d6] to-[#fff8e5] px-3 py-2.5 sm:px-4 sm:py-3">
+                                                    <span className="relative flex h-2.5 w-2.5 shrink-0 sm:h-3 sm:w-3"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#8a6d1c] opacity-60" /><span className="relative inline-flex h-full w-full rounded-full bg-[#8a6d1c]" /></span>
+                                                    <div className="min-w-0 flex-1 text-[11px] text-[#8a6d1c] sm:text-xs">
+                                                        Studio is working through your group — each member's token shows their status above.
+                                                    </div>
+                                                </div>
+                                            )}
+
                                             {isCompleted && (
                                                 <div className="mt-3 overflow-hidden rounded-2xl border border-[#c8e6d2] bg-gradient-to-br from-[#eaf7ee] via-[#f4fbf6] to-[#f8fdf9] p-4 sm:p-5">
                                                     <div className="flex items-start gap-3 sm:gap-4">
@@ -155,20 +329,34 @@ export default function MyOrdersModal({ onClose, onPay }) {
                                                             <CheckCircle2 size={20} className="sm:hidden" /><CheckCircle2 size={24} className="hidden sm:block" />
                                                         </div>
                                                         <div className="min-w-0 flex-1">
-                                                            <div className="serif text-lg font-semibold text-[#1d7a3e] sm:text-xl">Your Mehndi is ready! 🎨</div>
-                                                            <p className="mt-1.5 text-xs leading-5 text-[#3d5c47] sm:text-sm sm:leading-6">Thank you for choosing <strong>Mehndi Studio</strong> — it was a joy creating this for you.{o.durationSeconds ? <> Total time: <strong>{formatDuration(o.durationSeconds)}</strong>.</> : null}</p>
+                                                            <div className="serif text-lg font-semibold text-[#1d7a3e] sm:text-xl">
+                                                                {o.isGroup ? "Your group session is complete! 🎨" : "Your Mehndi is ready! 🎨"}
+                                                            </div>
+                                                            <p className="mt-1.5 text-xs leading-5 text-[#3d5c47] sm:text-sm sm:leading-6">
+                                                                Thank you for choosing <strong>Mehndi Studio</strong> — it was a joy creating this for you
+                                                                {!o.isGroup && o.durationSeconds ? <> Total time: <strong>{formatDuration(o.durationSeconds)}</strong>.</> : null}
+                                                            </p>
                                                             <p className="mt-2 flex items-center gap-1.5 text-[11px] italic text-[#4a7a5c] sm:text-xs"><PartyPopper size={12} className="shrink-0" />We can't wait to welcome you back. ✨</p>
                                                         </div>
                                                     </div>
                                                 </div>
                                             )}
 
-                                            <div className="mt-3 grid gap-1 border-t border-[#f0e6d8] pt-3 text-xs sm:mt-4 sm:text-sm">
-                                                {o.items.map((it, idx) => (
-                                                    <div key={idx} className="flex justify-between gap-3 text-[#715e4e]"><span className="min-w-0 truncate">{it.qty}× {it.name}</span><span className="shrink-0">{currency(it.price * it.qty)}</span></div>
-                                                ))}
-                                                <div className="mt-2 flex justify-between font-semibold"><span>Total</span><span>{currency(o.total)}</span></div>
-                                            </div>
+                                            {/* BUG FIX: hide standard items list for group orders (it's empty anyway) */}
+                                            {!isCustom && !o.isGroup && (
+                                                <div className="mt-3 grid gap-1 border-t border-[#f0e6d8] pt-3 text-xs sm:mt-4 sm:text-sm">
+                                                    {o.items.map((it, idx) => (
+                                                        <div key={idx} className="flex justify-between gap-3 text-[#715e4e]"><span className="min-w-0 truncate">{it.qty}× {it.name}</span><span className="shrink-0">{currency(it.price * it.qty)}</span></div>
+                                                    ))}
+                                                    <div className="mt-2 flex justify-between font-semibold"><span>Total</span><span>{currency(o.total)}</span></div>
+                                                </div>
+                                            )}
+
+                                            {isCustom && o.total > 0 && (
+                                                <div className="mt-3 grid gap-1 border-t border-[#f0e6d8] pt-3 text-xs sm:text-sm">
+                                                    <div className="flex justify-between font-semibold"><span>Total</span><span>{currency(o.total)}</span></div>
+                                                </div>
+                                            )}
 
                                             {o.paymentRejectReason && (
                                                 <div className="mt-3 flex items-start gap-2 rounded-xl bg-[#f8e4df] px-3 py-2 text-xs text-[#8c392d]">
@@ -176,13 +364,85 @@ export default function MyOrdersModal({ onClose, onPay }) {
                                                     <div className="min-w-0 break-words"><strong>Payment not received:</strong> {o.paymentRejectReason}</div>
                                                 </div>
                                             )}
-                                            {o.adminNote && <div className="mt-3 break-words rounded-xl bg-[#f5ecdf] px-3 py-2 text-xs text-[#5b4636]"><strong>Admin note:</strong> {o.adminNote}</div>}
 
-                                            {isApproved && (
-                                                <button onClick={() => onPay(o)} className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-[#24170f] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5"><CreditCard size={15} /> Pay now {currency(o.total)}</button>
+                                            {o.adminNote && !isQuoteProposed && (
+                                                <div className="mt-3 break-words rounded-xl bg-[#f5ecdf] px-3 py-2 text-xs text-[#5b4636]">
+                                                    <strong>Studio note:</strong> {o.adminNote}
+                                                </div>
                                             )}
+
+                                            {/* Modify design button — hidden for group orders */}
+                                            {canModify && (
+                                                <button
+                                                    onClick={() => onModify?.(o)}
+                                                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2.5 text-xs font-semibold text-[#5b4636] transition hover:bg-[#f4eadc]"
+                                                >
+                                                    <Pencil size={13} /> Modify design
+                                                </button>
+                                            )}
+
+                                            {/* Counter-offer response buttons */}
+                                            {isQuoteProposed && (
+                                                <div className="mt-4">
+                                                    <div className="flex flex-col gap-2 sm:flex-row">
+                                                        <button
+                                                            onClick={() => respondToQuote(o.id, "accept")}
+                                                            disabled={isResponding}
+                                                            className="flex-1 flex min-h-[48px] items-center justify-center gap-2 rounded-full bg-[#1d7a3e] px-5 py-3 text-sm font-semibold text-white hover:bg-[#155c2d] disabled:opacity-60"
+                                                        >
+                                                            {isResponding ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                                                            Accept {currency(o.quotedPrice)}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                if (!confirm("Decline this counter-offer? Studio will send a new price.")) return;
+                                                                respondToQuote(o.id, "decline");
+                                                            }}
+                                                            disabled={isResponding}
+                                                            className="flex-1 flex min-h-[48px] items-center justify-center gap-2 rounded-full border border-[#e6c4be] bg-white px-5 py-3 text-sm font-semibold text-[#9b3b2b] hover:bg-[#fdf2ef] disabled:opacity-60"
+                                                        >
+                                                            <XCircle size={15} /> Decline
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* UPI: Pay now */}
+                                            {isApproved && !isCounterPayment && (
+                                                <button onClick={() => onPay(o)} className="mt-3 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-[#24170f] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5">
+                                                    <CreditCard size={15} /> Pay now {currency(o.total)}
+                                                </button>
+                                            )}
+
+                                            {/* Cash/Card: Pay at counter */}
+                                            {isApproved && isCounterPayment && (
+                                                <div className="mt-3 space-y-3">
+                                                    <div className="flex items-start gap-3 rounded-2xl border border-[#f0d98c] bg-gradient-to-br from-[#fdf3d6] to-[#fff8e5] px-4 py-3">
+                                                        <Wallet size={20} className="mt-0.5 shrink-0 text-[#8a6d1c]" />
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="text-sm font-bold text-[#8a6d1c]">
+                                                                Pay at counter by {o.paymentMethod === "cash" ? "cash" : "card"}
+                                                            </div>
+                                                            <div className="mt-0.5 text-xs text-[#8a6d1c]/80">
+                                                                Show order <strong className="font-mono">#{o.id.slice(0, 8)}</strong> at the studio. {o.isGroup ? `Each of your ${o.members.length} members will get their own token after payment.` : "Your token will be assigned once payment is received."}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <button onClick={() => onPay(o)} className="flex w-full items-center justify-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2.5 text-xs font-semibold text-[#5b4636] transition hover:bg-[#f4eadc]">
+                                                        <RefreshCw size={13} /> Change to UPI / Pay online instead
+                                                    </button>
+                                                </div>
+                                            )}
+
                                             {isPaid && (
-                                                <div className="mt-4 flex items-center gap-2 rounded-full bg-[#e2f0e5] px-4 py-2 text-[11px] font-semibold text-[#1d7a3e] sm:text-xs"><CheckCircle2 size={14} className="shrink-0" /><span className="min-w-0 truncate">Payment received · {o.paymentId}</span></div>
+                                                <div className="mt-4 flex items-center gap-2 rounded-full bg-[#e2f0e5] px-4 py-2 text-[11px] font-semibold text-[#1d7a3e] sm:text-xs">
+                                                    <CheckCircle2 size={14} className="shrink-0" />
+                                                    <span className="min-w-0 truncate">
+                                                        Payment received{o.paymentId ? ` · ${o.paymentId}` : ""}
+                                                        {o.isGroup ? ` · ${o.members.length} tokens assigned` : ""}
+                                                    </span>
+                                                </div>
                                             )}
                                         </div>
                                     );
@@ -229,5 +489,31 @@ function LiveTimer({ startedAt }) {
             </div>
             <Sparkles size={18} className="shrink-0 text-[#8a6d1c] sm:hidden" /><Sparkles size={20} className="hidden shrink-0 text-[#8a6d1c] sm:block" />
         </div>
+    );
+}
+
+/* ---------- Compact inline timer for a group member ---------- */
+function MemberInlineTimer({ startedAt }) {
+    const [now, setNow] = useState(Date.now());
+    useEffect(() => {
+        const t = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
+    if (!startedAt) return null;
+    const elapsed = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
+    const h = Math.floor(elapsed / 3600);
+    const m = Math.floor((elapsed % 3600) / 60);
+    const s = elapsed % 60;
+    const timeString = h > 0
+        ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+        : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#fdf3d6] border border-[#f0d98c] px-2 py-0.5 text-[10px] font-bold tabular-nums text-[#8a6d1c]">
+            <span className="relative flex h-1.5 w-1.5 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#8a6d1c] opacity-70" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#8a6d1c]" />
+            </span>
+            🎨 {timeString}
+        </span>
     );
 }

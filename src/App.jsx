@@ -11,14 +11,16 @@ import AuthModal from "./pages/AuthModal";
 import AccountModal from "./pages/AccountModal";
 import BookingModal from "./pages/BookingModal";
 import MyOrdersModal from "./pages/MyOrdersModal";
+import ModifyOrderModal from "./pages/ModifyOrderModal";
 import PaymentModal from "./pages/PaymentModal";
 import EventPage from "./pages/EventPage";
+import MonitorPage from "./pages/MonitorPage";
+import CustomisePage from "./pages/CustomisePage";
 import { api, API_BASE } from "./lib/api";
 import { playNotificationSound, primeAudioOnFirstGesture } from "./lib/notify";
 import { imageUrl, currency } from "./lib/format";
 import SafeImage from "./components/SafeImage";
 import Catalog from "./components/Catalog";
-import MonitorPage from "./pages/MonitorPage";
 
 const API = API_BASE;
 
@@ -51,11 +53,6 @@ function App() {
       .finally(() => setChecking(false));
   }, [isAdminRoute]);
 
-  /* =========================================================
-     LOAD EVENT
-     - If ?event=ID in URL → fetch that specific event (QR code)
-     - Otherwise → fetch globally active event
-  ========================================================= */
   useEffect(() => {
     if (isAdminRoute || isMonitorRoute) return;
 
@@ -65,7 +62,6 @@ function App() {
     const loadEvent = async () => {
       try {
         if (eventIdFromUrl) {
-          // QR code scan: fetch the SPECIFIC event
           const { data } = await api.get(`/api/events/${eventIdFromUrl}`);
           if (data?.event) {
             setActiveEvent(data.event);
@@ -73,7 +69,6 @@ function App() {
           }
         }
 
-        // Fallback: check for a globally active event
         const { data } = await api.get("/api/events/active");
         if (data.active && data.event) {
           setActiveEvent(data.event);
@@ -95,7 +90,6 @@ function App() {
 
   useEffect(() => { primeAudioOnFirstGesture(); }, []);
 
-  // NEW: Render MonitorPage
   if (isMonitorRoute) {
     const urlParams = new URLSearchParams(window.location.search);
     const eventId = urlParams.get("event");
@@ -134,6 +128,11 @@ function PublicCatalog({ activeEvent }) {
   const [bookingOpen, setBookingOpen] = useState(false);
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [paymentOrder, setPaymentOrder] = useState(null);
+  const [modifyOrder, setModifyOrder] = useState(null);
+
+  // Customise feature
+  const [customiseOpen, setCustomiseOpen] = useState(false);
+  const [pendingCustomise, setPendingCustomise] = useState(false);
 
   const [cart, setCart] = useState([]);
   const [selectedItems, setSelectedItems] = useState(new Set());
@@ -192,11 +191,40 @@ function PublicCatalog({ activeEvent }) {
     setUser(u);
     setAuthOpen(false);
     if (pendingDesign) { setTimeout(() => doAddToCart(pendingDesign), 100); setPendingDesign(null); }
+    if (pendingCustomise) {
+      setPendingCustomise(false);
+      setCustomiseOpen(true);
+    }
+  };
+
+  /* Navigation: close customise/menu first, then scroll to the section */
+  const navigateTo = (targetId) => {
+    setMobileMenu(false);
+    const wasCustomiseOpen = customiseOpen;
+    if (wasCustomiseOpen) setCustomiseOpen(false);
+
+    // Wait for React to re-render the catalog, then scroll
+    setTimeout(() => {
+      if (targetId) document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth" });
+      else window.scrollTo({ top: 0, behavior: "smooth" });
+    }, wasCustomiseOpen ? 80 : 0);
+  };
+
+  /* Customise is now a TOGGLE — click again to exit */
+  const toggleCustomise = () => {
+    setMobileMenu(false);
+    if (customiseOpen) { setCustomiseOpen(false); return; }
+    if (!user) {
+      setPendingCustomise(true);
+      setAuthOpen(true);
+      return;
+    }
+    setCustomiseOpen(true);
   };
 
   const userLogout = () => {
     localStorage.removeItem("mehndi-user-token");
-    setUser(null); setCart([]); setSelectedItems(new Set()); setCartOpen(false); setAccountOpen(false); setOrdersOpen(false); setBookingOpen(false); setPaymentOrder(null);
+    setUser(null); setCart([]); setSelectedItems(new Set()); setCartOpen(false); setAccountOpen(false); setOrdersOpen(false); setBookingOpen(false); setPaymentOrder(null); setModifyOrder(null); setCustomiseOpen(false);
   };
 
   const toggleItem = (id) => {
@@ -219,18 +247,58 @@ function PublicCatalog({ activeEvent }) {
 
   return (
     <div className="min-h-screen bg-[#fbf8f2] text-[#2a1a12]">
-      <Header count={cartCount} onCart={() => (user ? setCartOpen(true) : setAuthOpen(true))} onMenu={() => setMobileMenu(!mobileMenu)} user={user} onSignIn={() => setAuthOpen(true)} onSignOut={userLogout} onAccount={() => setAccountOpen(true)} onOrders={() => setOrdersOpen(true)} />
+      <Header
+        count={cartCount}
+        onCart={() => (user ? setCartOpen(true) : setAuthOpen(true))}
+        onMenu={() => setMobileMenu(!mobileMenu)}
+        user={user}
+        onSignIn={() => setAuthOpen(true)}
+        onSignOut={userLogout}
+        onAccount={() => setAccountOpen(true)}
+        onOrders={() => setOrdersOpen(true)}
+        onCustomise={toggleCustomise}
+        onNavigate={navigateTo}
+        customiseActive={customiseOpen}
+      />
 
-      {mobileMenu && <MobileMenu setMobileMenu={setMobileMenu} setActiveCategory={setActiveCategory} user={user} onSignIn={() => setAuthOpen(true)} onSignOut={userLogout} onAccount={() => setAccountOpen(true)} onOrders={() => setOrdersOpen(true)} />}
+      {mobileMenu && (
+        <MobileMenu
+          setMobileMenu={setMobileMenu}
+          setActiveCategory={setActiveCategory}
+          user={user}
+          onSignIn={() => setAuthOpen(true)}
+          onSignOut={userLogout}
+          onAccount={() => setAccountOpen(true)}
+          onOrders={() => setOrdersOpen(true)}
+          onCustomise={toggleCustomise}
+          onNavigate={navigateTo}
+        />
+      )}
 
       <main>
-        {activeEvent ? (
+        {customiseOpen ? (
+          <CustomisePage
+            user={user}
+            activeEvent={activeEvent}
+            onRequireAuth={() => { setPendingCustomise(true); setAuthOpen(true); }}
+            onSubmitted={() => { /* optional: could auto-open orders */ }}
+            onBack={() => setCustomiseOpen(false)}
+          />
+        ) : activeEvent ? (
           <EventPage event={activeEvent} onAddToCart={addToCart} onSelect={setSelected} />
         ) : (
           <>
-            <Hero onExplore={() => document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" })} />
+            <Hero onExplore={() => navigateTo("catalog")} />
             <CategoryRail categories={categories} active={activeCategory} setActive={setActiveCategory} />
-            <Catalog categories={categories} activeCategory={activeCategory} setActiveCategory={setActiveCategory} search={search} setSearch={setSearch} onSelect={setSelected} onAdmin={() => { window.location.href = "/admin"; }} />
+            <Catalog
+              categories={categories}
+              activeCategory={activeCategory}
+              setActiveCategory={setActiveCategory}
+              search={search}
+              setSearch={setSearch}
+              onSelect={setSelected}
+              onAdmin={() => { window.location.href = "/admin"; }}
+            />
             <Story />
           </>
         )}
@@ -240,16 +308,13 @@ function PublicCatalog({ activeEvent }) {
 
       {selected && <DesignModal design={selected} onClose={() => setSelected(null)} onAdd={addToCart} />}
       {cartOpen && user && <CartDrawer cart={cart} setCart={setCart} total={cartTotal} selectedItems={selectedItems} toggleItem={toggleItem} toggleAll={toggleAll} onClose={() => setCartOpen(false)} onProceed={() => { setCartOpen(false); setBookingOpen(true); }} />}
-      {authOpen && <AuthModal reason={pendingDesign ? "Create an account or sign in to add this design to your selection." : null} onClose={() => { setAuthOpen(false); setPendingDesign(null); }} onSuccess={handleAuthSuccess} />}
+      {authOpen && <AuthModal reason={pendingDesign ? "Create an account or sign in to add this design to your selection." : pendingCustomise ? "Sign in to create your custom design request." : null} onClose={() => { setAuthOpen(false); setPendingDesign(null); setPendingCustomise(false); }} onSuccess={handleAuthSuccess} />}
       {accountOpen && user && <AccountModal user={user} onClose={() => setAccountOpen(false)} onSignOut={userLogout} />}
-      {/* {bookingOpen && user && selectedCartItems.length > 0 && <BookingModal cart={selectedCartItems} total={selectedTotal} onClose={() => setBookingOpen(false)} onSuccess={() => { const remaining = cart.filter(i => !selectedItems.has(i.id)); setCart(remaining); setSelectedItems(new Set()); setBookingOpen(false); setOrdersOpen(true); }} />} */}
-
-// Inside PublicCatalog component, find the BookingModal render:
-
       {bookingOpen && user && selectedCartItems.length > 0 && (
         <BookingModal
           cart={selectedCartItems}
           total={selectedTotal}
+          activeEvent={activeEvent}         
           onClose={() => setBookingOpen(false)}
           onSuccess={(order) => {
             const remaining = cart.filter(i => !selectedItems.has(i.id));
@@ -257,7 +322,6 @@ function PublicCatalog({ activeEvent }) {
             setSelectedItems(new Set());
             setBookingOpen(false);
 
-            // NEW: If it's an event order (auto-approved), go straight to payment
             if (order.eventId) {
               setPaymentOrder(order);
             } else {
@@ -267,28 +331,61 @@ function PublicCatalog({ activeEvent }) {
         />
       )}
 
-      {ordersOpen && user && <MyOrdersModal onClose={() => setOrdersOpen(false)} onPay={(order) => { setOrdersOpen(false); setPaymentOrder(order); }} />}
+      {ordersOpen && user && (
+        <MyOrdersModal
+          onClose={() => setOrdersOpen(false)}
+          onPay={(order) => { setOrdersOpen(false); setPaymentOrder(order); }}
+          onModify={(order) => { setOrdersOpen(false); setModifyOrder(order); }}
+        />
+      )}
+
+      {modifyOrder && (
+        <ModifyOrderModal
+          order={modifyOrder}
+          onClose={() => setModifyOrder(null)}
+          onSuccess={(updatedOrder) => {
+            setModifyOrder(null);
+            if (updatedOrder.eventId && (updatedOrder.totalDifference || 0) > 0) {
+              setPaymentOrder(updatedOrder);
+            } else {
+              setOrdersOpen(true);
+            }
+          }}
+        />
+      )}
+
       {paymentOrder && user && <PaymentModal order={paymentOrder} onClose={() => setPaymentOrder(null)} onPaid={() => { setPaymentOrder(null); setOrdersOpen(true); }} />}
     </div>
   );
 }
 
 /* HEADER */
-function Header({ count, onCart, onMenu, user, onSignIn, onSignOut, onAccount, onOrders }) {
+function Header({ count, onCart, onMenu, user, onSignIn, onSignOut, onAccount, onOrders, onCustomise, onNavigate, customiseActive }) {
   return (
     <header className="sticky top-0 z-40 border-b border-[#eadfce] bg-[#fbf8f2]/90 backdrop-blur-xl">
       <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 lg:px-8">
-        <a href="#" className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => onNavigate?.("catalog")}
+          className="flex items-center gap-3"
+        >
           <div className="grid h-10 w-10 place-items-center rounded-full bg-[#24170f] text-[#f1cf8a]"><span className="serif text-xl">M</span></div>
-          <div>
+          <div className="text-left">
             <div className="serif text-xl font-bold tracking-tight">Mehndi Studio</div>
             <div className="text-[9px] uppercase tracking-[.28em] text-[#8a6d53]">Art on your hands</div>
           </div>
-        </a>
+        </button>
         <nav className="hidden items-center gap-8 text-sm font-medium lg:flex">
-          <a href="#catalog" className="hover:text-[#9b5d32]">Designs</a>
-          <a href="#categories" className="hover:text-[#9b5d32]">Categories</a>
-          <a href="#story" className="hover:text-[#9b5d32]">Our Story</a>
+          <button type="button" onClick={() => onNavigate?.("catalog")} className="hover:text-[#9b5d32]">Designs</button>
+          <button type="button" onClick={() => onNavigate?.("categories")} className="hover:text-[#9b5d32]">Categories</button>
+          <button
+            type="button"
+            onClick={onCustomise}
+            className={`transition hover:text-[#9b5d32] ${customiseActive ? "text-[#7d3f24] font-bold" : ""}`}
+          >
+            ✨ Customise
+          </button>
+          <button type="button" onClick={() => onNavigate?.("story")} className="hover:text-[#9b5d32]">Our Story</button>
           <a href="/admin" className="rounded-full border border-[#ded0bc] bg-white px-4 py-1.5 hover:bg-[#f4eadc]">Admin</a>
         </nav>
         <div className="flex items-center gap-2">
@@ -312,12 +409,25 @@ function Header({ count, onCart, onMenu, user, onSignIn, onSignOut, onAccount, o
   );
 }
 
-function MobileMenu({ setMobileMenu, setActiveCategory, user, onSignIn, onSignOut, onAccount, onOrders }) {
+function MobileMenu({ setMobileMenu, setActiveCategory, user, onSignIn, onSignOut, onAccount, onOrders, onCustomise, onNavigate }) {
+  const pickCategory = (id) => {
+    setActiveCategory(id);
+    onNavigate?.("catalog");
+  };
+
   return <div className="fixed inset-x-0 top-20 z-30 border-b border-[#eadfce] bg-[#fffdf9] p-5 shadow-xl lg:hidden">
     <div className="grid gap-2">
       {["all", "arabic", "indian", "pakistani", "moroccan", "indo-arabic", "minimal-modern", "bridal"].map(x =>
-        <button key={x} onClick={() => { setActiveCategory(x); setMobileMenu(false); document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" }); }} className="rounded-xl px-4 py-3 text-left text-sm capitalize hover:bg-[#f4eadc]">{x === "all" ? "All Designs" : x.replace("-", " / ")}</button>
+        <button key={x} onClick={() => pickCategory(x)} className="rounded-xl px-4 py-3 text-left text-sm capitalize hover:bg-[#f4eadc]">{x === "all" ? "All Designs" : x.replace("-", " / ")}</button>
       )}
+
+      <button
+        onClick={() => { onCustomise?.(); }}
+        className="rounded-xl bg-gradient-to-r from-[#f1cf8a]/40 to-[#f1cf8a]/20 px-4 py-3 text-left text-sm font-semibold text-[#7d3f24]"
+      >
+        ✨ Customise your design
+      </button>
+
       {user ? (
         <>
           <button onClick={() => { setMobileMenu(false); onOrders(); }} className="flex items-center gap-2 rounded-xl border border-[#ded0bc] bg-white px-4 py-3 text-left text-sm font-semibold">📅 My orders</button>

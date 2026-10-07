@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
     LogOut, Image as ImageIcon, Users, Bell, Plus, X, Upload, Loader2,
     Calendar, Clock, CheckCircle2, XCircle, ShieldAlert, Play, Square, BarChart3, LayoutGrid, Trash2, QrCode, Search, Monitor,
-    Timer
+    Timer, Palette, Coins,
 } from "lucide-react";
 import { io } from "socket.io-client";
 import GoogleDriveCard from "./GoogleDriveCard";
@@ -34,7 +34,6 @@ export default function AdminDashboard({ user, onLogout }) {
     const [ordersLoading, setOrdersLoading] = useState(true);
     const [actionOrder, setActionOrder] = useState(null);
 
-    // NEW: State for events and filtering
     const [events, setEvents] = useState([]);
     const [eventFilter, setEventFilter] = useState("all");
 
@@ -51,9 +50,15 @@ export default function AdminDashboard({ user, onLogout }) {
         const socket = io(API_BASE, { auth: { token } });
         socket.on("notification", (n) => {
             playNotificationSound("info");
-            if (n.type === "new-order" || n.type === "order-paid" || n.type === "payment-claim") {
+            if (
+                n.type === "new-order" ||
+                n.type === "order-paid" ||
+                n.type === "payment-claim" ||
+                n.type === "order-update" ||
+                n.type === "order-completed"
+            ) {
                 showToast("info", n.title);
-                loadOrders(true);
+                setTimeout(() => loadOrders(true), 300);
             } else {
                 showToast("info", n.title);
             }
@@ -66,10 +71,9 @@ export default function AdminDashboard({ user, onLogout }) {
     const loadOrders = async (silent = false) => {
         if (!silent) setOrdersLoading(true);
         try {
-            const { data } = await api.get("/api/orders");
+            const { data } = await api.get(`/api/orders?t=${Date.now()}`);
             setOrders(data);
-            // Also fetch events when loading orders
-            const evRes = await api.get("/api/events");
+            const evRes = await api.get(`/api/events?t=${Date.now()}`);
             setEvents(Array.isArray(evRes.data) ? evRes.data : (evRes.data?.events || []));
         }
         catch { /* ignore */ }
@@ -81,13 +85,12 @@ export default function AdminDashboard({ user, onLogout }) {
     const showToast = (kind, text) => { setToast({ kind, text }); setTimeout(() => setToast(null), 3500); };
     const pendingCount = orders.filter(o => o.status === "pending").length;
     const verifyCount = orders.filter(o => o.status === "awaiting-verification").length;
+    const customCount = orders.filter(o => ["custom-pending", "quote-proposed"].includes(o.status)).length;
     const HIDDEN_STATUSES = ["completed", "rejected"];
     const activeOrders = orders.filter(o => !HIDDEN_STATUSES.includes(o.status));
 
-    // NEW: Create a lookup map for event names
     const eventNameMap = Object.fromEntries(events.map(e => [e.id, e.name]));
 
-    // NEW: Apply event filter
     const filteredOrders = activeOrders.filter(o => {
         if (eventFilter === "all") return true;
         if (eventFilter === "none") return !o.eventId;
@@ -141,7 +144,19 @@ export default function AdminDashboard({ user, onLogout }) {
                                     </div>
                                 </button>
                                 <QuickCard icon={<Users size={18} />} title="Users" body="Create ADMIN & USER accounts" />
-                                <QuickCard icon={<Bell size={18} />} title="Appointments" body={verifyCount > 0 ? `${verifyCount} payment${verifyCount > 1 ? "s" : ""} to verify` : pendingCount > 0 ? `${pendingCount} pending request${pendingCount > 1 ? "s" : ""}` : "No pending requests"} />
+                                <QuickCard
+                                    icon={<Bell size={18} />}
+                                    title="Appointments"
+                                    body={
+                                        customCount > 0
+                                            ? `${customCount} custom request${customCount > 1 ? "s" : ""} awaiting quote`
+                                            : verifyCount > 0
+                                                ? `${verifyCount} payment${verifyCount > 1 ? "s" : ""} to verify`
+                                                : pendingCount > 0
+                                                    ? `${pendingCount} pending request${pendingCount > 1 ? "s" : ""}`
+                                                    : "No pending requests"
+                                    }
+                                />
                             </div>
                         </div>
 
@@ -151,10 +166,9 @@ export default function AdminDashboard({ user, onLogout }) {
                             <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="serif text-xl font-semibold sm:text-2xl">Appointment requests</h2>
-                                    <p className="text-xs text-[#8a6d53] sm:text-sm">{pendingCount} pending · {verifyCount} to verify · {activeOrders.length} active</p>
+                                    <p className="text-xs text-[#8a6d53] sm:text-sm">{pendingCount} pending · {verifyCount} to verify · {customCount} custom · {activeOrders.length} active</p>
                                 </div>
                                 <div className="flex items-center gap-2 self-start sm:self-auto">
-                                    {/* NEW: Event Filter Dropdown */}
                                     <select
                                         value={eventFilter}
                                         onChange={(e) => setEventFilter(e.target.value)}
@@ -181,7 +195,7 @@ export default function AdminDashboard({ user, onLogout }) {
                                         <OrderCard
                                             key={o.id}
                                             order={o}
-                                            eventName={eventNameMap[o.eventId]} // Pass event name down
+                                            eventName={eventNameMap[o.eventId]}
                                             onAction={setActionOrder}
                                             onRefresh={() => loadOrders(true)}
                                             onViewImage={(src, alt) => setLightbox({ src, alt })}
@@ -197,7 +211,24 @@ export default function AdminDashboard({ user, onLogout }) {
             </main>
 
             {addOpen && <AddDesignModal onClose={() => setAddOpen(false)} onSaved={() => { setAddOpen(false); setDesignsKey(k => k + 1); showToast("ok", "Design uploaded to Drive ✓"); }} />}
-            {actionOrder && <OrderActionModal order={actionOrder.order} mode={actionOrder.mode} onClose={() => setActionOrder(null)} onDone={() => { setActionOrder(null); loadOrders(true); showToast("ok", "Order updated"); }} />}
+
+            {actionOrder?.mode === "quote" && (
+                <QuoteCustomOrderModal
+                    order={actionOrder.order}
+                    onClose={() => setActionOrder(null)}
+                    onDone={() => { setActionOrder(null); loadOrders(true); showToast("ok", "Response sent to customer"); }}
+                />
+            )}
+
+            {actionOrder && actionOrder.mode !== "quote" && (
+                <OrderActionModal
+                    order={actionOrder.order}
+                    mode={actionOrder.mode}
+                    onClose={() => setActionOrder(null)}
+                    onDone={() => { setActionOrder(null); loadOrders(true); showToast("ok", "Order updated"); }}
+                />
+            )}
+
             {lightbox && <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />}
             {toast && <div className={`fixed left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-2xl px-5 py-3 text-center text-sm font-semibold shadow-xl sm:left-auto sm:right-6 sm:w-auto sm:max-w-none sm:-translate-x-0 sm:text-left ${toast.kind === "err" ? "bg-[#7d3f24] text-white" : toast.kind === "ok" ? "bg-[#1d7a3e] text-white" : "bg-[#24170f] text-[#f1cf8a]"}`} style={{ bottom: "max(1.25rem, env(safe-area-inset-bottom))" }}>{toast.text}</div>}
         </div>
@@ -205,7 +236,7 @@ export default function AdminDashboard({ user, onLogout }) {
 }
 
 /* =========================================================
-   EVENTS MANAGER COMPONENT (With QR, Image Preview, Search & Status)
+   EVENTS MANAGER COMPONENT
    ========================================================= */
 function EventsManager() {
     const [events, setEvents] = useState([]);
@@ -224,6 +255,7 @@ function EventsManager() {
     const [selectAll, setSelectAll] = useState(false);
     const [priceOverrides, setPriceOverrides] = useState({});
     const [monitorEvent, setMonitorEvent] = useState(null);
+
     useEffect(() => {
         fetchEvents();
         fetchDesigns();
@@ -248,13 +280,11 @@ function EventsManager() {
         } catch (err) { console.error(err); }
     };
 
-    // NEW: Helper to determine event status
     const getEventStatus = (event) => {
         const now = new Date();
         const start = new Date(event.startDate);
         const end = new Date(event.endDate);
-
-        if (isNaN(start.getTime()) || isNaN(end.getTime())) return "closed"; // fallback
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) return "closed";
         if (now < start) return "upcoming";
         if (now > end) return "closed";
         return "active";
@@ -406,10 +436,8 @@ function EventsManager() {
                     events.map(e => {
                         const status = getEventStatus(e);
                         const isActive = status === "active";
-                        const isUpcoming = status === "upcoming";
                         const isClosed = status === "closed";
 
-                        // Status styling
                         const statusConfig = {
                             active: { label: "Active Now", color: "bg-[#e2f0e5] text-[#1d7a3e] border-[#1d7a3e]/30" },
                             upcoming: { label: "Upcoming", color: "bg-[#fdf3d6] text-[#8a6d1c] border-[#8a6d1c]/30" },
@@ -440,7 +468,6 @@ function EventsManager() {
                                     <button onClick={() => setQrEvent(e)} className="text-[#7d3f24] p-3 hover:bg-[#f4eadc] rounded-full transition" title="Generate QR Code">
                                         <QrCode size={18} />
                                     </button>
-                                    {/* ADD MONITOR BUTTON */}
                                     <button onClick={() => setMonitorEvent(e)} className="text-[#1d7a3e] p-3 hover:bg-[#e2f0e5] rounded-full transition" title="Monitor Display Link">
                                         <Monitor size={18} />
                                     </button>
@@ -556,7 +583,7 @@ function QuickCard({ icon, title, body }) {
     );
 }
 
-/* ---------- Order card (Now displays Event Name + Token) ---------- */
+/* ---------- Order card ---------- */
 function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
     const STATUS = {
         pending: { cls: "bg-[#f4eadc] text-[#8a6d53]", label: "Pending" },
@@ -566,6 +593,8 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
         paid: { cls: "bg-[#e2f0e5] text-[#1d7a3e]", label: "Paid" },
         "in-progress": { cls: "bg-[#fdf3d6] text-[#8a6d1c]", label: "In progress 🎨" },
         completed: { cls: "bg-[#e2f0e5] text-[#1d7a3e]", label: "Completed ✓" },
+        "custom-pending": { cls: "bg-[#fdf9ef] text-[#7d3f24] border border-[#f1cf8a]", label: "Custom · Awaiting quote" },
+        "quote-proposed": { cls: "bg-[#fdf3d6] text-[#8a6d1c]", label: "Counter-offer sent" },
     }[order.status] || { cls: "bg-[#f4eadc] text-[#8a6d53]", label: order.status };
 
     const d = order.proposedDate || order.requestedDate;
@@ -576,7 +605,8 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
     const [err, setErr] = useState("");
 
     const confirmPayment = async () => {
-        if (!confirm(`Confirm you received £${order.total} for this order?`)) return;
+        const label = order.paymentMethod === "cash" ? "cash" : order.paymentMethod === "card" ? "card" : "UPI";
+        if (!confirm(`Confirm you received ${currency(order.total)} via ${label}?`)) return;
         setVerifyBusy(true); setErr("");
         try { await api.post(`/api/orders/${order.id}/confirm-payment`, {}); onRefresh?.(); }
         catch (e) { setErr(e.response?.data?.message || "Failed"); }
@@ -604,17 +634,52 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
         finally { setVerifyBusy(false); }
     };
 
+    const startMember = async (memberId) => {
+        setVerifyBusy(true); setErr("");
+        try { await api.post(`/api/orders/${order.id}/members/${memberId}/start`); onRefresh?.(); }
+        catch (e) { setErr(e.response?.data?.message || "Failed"); }
+        finally { setVerifyBusy(false); }
+    };
+
+    const endMember = async (memberId) => {
+        setVerifyBusy(true); setErr("");
+        try { await api.post(`/api/orders/${order.id}/members/${memberId}/end`); onRefresh?.(); }
+        catch (e) { setErr(e.response?.data?.message || "Failed"); }
+        finally { setVerifyBusy(false); }
+    };
+
+    const isCustom = order.type === "custom";
+    const groupActive = order.isGroup && ["paid", "in-progress"].includes(order.status);
+
     return (
-        <div className={`rounded-2xl border-2 bg-white p-4 sm:p-5 ${order.status === "awaiting-verification" ? "border-[#f0b950] shadow-[0_0_0_3px_rgba(240,185,80,0.15)]" : "border-[#eadfce]"}`}>
+        <div className={`rounded-2xl border-2 bg-white p-4 sm:p-5 ${order.status === "awaiting-verification" ? "border-[#f0b950] shadow-[0_0_0_3px_rgba(240,185,80,0.15)]" : isCustom && ["custom-pending", "quote-proposed"].includes(order.status) ? "border-[#f1cf8a]" : "border-[#eadfce]"}`}>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-3">
                 <div className="min-w-0">
-                    <div className="truncate text-[10px] uppercase tracking-[.16em] text-[#8a6d53] sm:tracking-[.18em]">Order #{order.id.slice(0, 8)} · {order.username}</div>
+                    {/* EVENT NAME CHIP — NEW: shows whenever order belongs to an event, even for group orders */}
+                    <div className="flex flex-wrap items-center gap-2 truncate text-[10px] uppercase tracking-[.16em] text-[#8a6d53] sm:tracking-[.18em]">
+                        <span>Order #{order.id.slice(0, 8)} · {order.username}</span>
+                        {eventName && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-[#7d3f24]/10 px-2 py-0.5 text-[10px] font-bold normal-case tracking-normal text-[#7d3f24]">
+                                🎉 {eventName}
+                            </span>
+                        )}
+                    </div>
 
-                    {/* UPDATED: EVENT TOKEN DISPLAY WITH NAME */}
                     {order.tokenNumber && (
                         <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#f1cf8a]/30 border border-[#f1cf8a]/50 px-3 py-1 text-[11px] font-bold text-[#7d3f24]">
                             🎟️ {eventName ? `${eventName} - ` : ""}Token #{order.tokenNumber}
                         </div>
+                    )}
+
+                    {order.paymentMethod && (
+                        <span className={`ml-2 mt-1 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${order.paymentMethod === "upi"
+                            ? "border-[#1d7a3e]/30 bg-[#e2f0e5] text-[#1d7a3e]"
+                            : order.paymentMethod === "card"
+                                ? "border-[#2a3a7d]/30 bg-[#e6e8f7] text-[#2a3a7d]"
+                                : "border-[#8a6d1c]/30 bg-[#fdf3d6] text-[#8a6d1c]"
+                            }`}>
+                            {order.paymentMethod === "upi" ? "📱 UPI" : order.paymentMethod === "card" ? "💳 Card" : "💵 Cash"}
+                        </span>
                     )}
 
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
@@ -627,22 +692,145 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
                 <span className={`self-start whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-bold sm:text-xs ${STATUS.cls}`}>{STATUS.label}</span>
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-2">
-                {order.items.map((it, idx) => (
-                    <button key={idx} type="button" onClick={() => onViewImage?.(imageUrl(it.image), it.name)} className="h-16 w-14 cursor-zoom-in overflow-hidden rounded-xl border border-[#eadfce] bg-[#eadcc9] transition hover:ring-2 hover:ring-[#7d3f24] sm:h-20 sm:w-16" title={`View ${it.name}`}>
-                        <SafeImage src={imageUrl(it.image, "thumb")} alt={it.name} className="h-full w-full object-cover" />
-                    </button>
-                ))}
-            </div>
+            {/* Group order — per-member controls */}
+            {order.isGroup && (
+                <div className="mt-3 rounded-2xl border-2 border-dashed border-[#f1cf8a] bg-[#fdf9ef] p-4">
+                    <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#7d3f24]">
+                        <Users size={12} className="mr-1 inline" /> Group of {order.members.length} · {currency(order.total)}
+                    </div>
+                    <div className="space-y-2">
+                        {order.members.map(m => {
+                            const mStatus = m.status || "pending";
+                            const canStart = groupActive && mStatus === "pending";
+                            const canEnd = mStatus === "in-progress";
+                            return (
+                                <div key={m.memberId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#eadfce] bg-white px-3 py-2">
+                                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                                        {m.tokenNumber ? (
+                                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#f1cf8a]/40 border border-[#f1cf8a]/60 px-2.5 py-0.5 text-xs font-bold text-[#7d3f24]">
+                                                🎟️ #{m.tokenNumber}
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex shrink-0 items-center rounded-full bg-[#f4eadc] px-2.5 py-0.5 text-[10px] font-semibold text-[#8a6d53]">
+                                                No token
+                                            </span>
+                                        )}
+                                        <span className="truncate text-sm font-semibold">{m.name}</span>
+                                        <span className="shrink-0 text-xs text-[#8a6d53]">{currency(m.subtotal)}</span>
+                                    </div>
 
-            <div className="mt-3 grid gap-1 border-t border-[#f0e6d8] pt-3 text-xs sm:text-sm">
-                {order.items.map((it, i) => (
-                    <div key={i} className="flex justify-between gap-3 text-[#715e4e]"><span className="min-w-0 truncate">{it.qty}× {it.name}</span><span className="shrink-0">{currency(it.price * it.qty)}</span></div>
-                ))}
-                <div className="mt-1 flex justify-between gap-3 font-semibold"><span>Total</span><span>{currency(order.total)}</span></div>
-            </div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        {mStatus === "in-progress" && <MemberInlineTimer startedAt={m.startedAt} />}
+                                        {canStart && (
+                                            <button
+                                                onClick={() => startMember(m.memberId)}
+                                                disabled={verifyBusy}
+                                                className="flex items-center gap-1 rounded-full bg-[#7d3f24] px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-60"
+                                            >
+                                                <Play size={11} /> Start
+                                            </button>
+                                        )}
+                                        {canEnd && (
+                                            <button
+                                                onClick={() => endMember(m.memberId)}
+                                                disabled={verifyBusy}
+                                                className="flex items-center gap-1 rounded-full bg-[#1d7a3e] px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-60"
+                                            >
+                                                <Square size={11} /> End
+                                            </button>
+                                        )}
+                                        {mStatus === "completed" && (
+                                            <span className="rounded-full bg-[#e2f0e5] px-2.5 py-0.5 text-[10px] font-bold text-[#1d7a3e]">
+                                                ✓ Done {m.durationSeconds >= 60 ? `${Math.round(m.durationSeconds / 60)}m` : `${m.durationSeconds}s`}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    {groupActive && (
+                        <div className="mt-3 text-[11px] italic text-[#8a6d1c]">
+                            Use the <strong>Start</strong> / <strong>End</strong> buttons above to work through the group one person at a time.
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Custom design block */}
+            {isCustom ? (
+                <div className="mt-3 rounded-2xl border-2 border-dashed border-[#f1cf8a] bg-[#fdf9ef] p-4">
+                    <div className="flex items-start gap-3">
+                        {order.customImage && (
+                            <button
+                                type="button"
+                                onClick={() => onViewImage?.(imageUrl(order.customImage), "Reference image")}
+                                className="h-20 w-16 shrink-0 overflow-hidden rounded-xl border border-[#eadfce] bg-white transition hover:ring-2 hover:ring-[#7d3f24]"
+                            >
+                                <SafeImage src={imageUrl(order.customImage)} alt="Reference" className="h-full w-full object-cover" />
+                            </button>
+                        )}
+                        <div className="min-w-0 flex-1">
+                            <div className="text-[10px] font-bold uppercase tracking-widest text-[#7d3f24]">🎨 Custom design request</div>
+                            <div className="mt-1 line-clamp-3 text-xs text-[#5b4636] whitespace-pre-wrap">{order.customDescription}</div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <span className="rounded-full bg-[#f1cf8a]/40 px-3 py-1 text-[11px] font-bold text-[#7d3f24]">
+                                    💰 Suggested: {currency(order.suggestedPrice)}
+                                </span>
+                                {order.quotedPrice && (
+                                    <span className="rounded-full bg-[#fdf3d6] px-3 py-1 text-[11px] font-bold text-[#8a6d1c]">
+                                        Counter: {currency(order.quotedPrice)}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {order.status === "custom-pending" && (
+                        <button
+                            onClick={() => onAction({ order, mode: "quote" })}
+                            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full bg-[#7d3f24] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#5f2e18]"
+                        >
+                            <Palette size={13} /> Review & respond
+                        </button>
+                    )}
+
+                    {order.status === "quote-proposed" && (
+                        <div className="mt-3 rounded-xl bg-[#fdf3d6] px-3 py-2 text-[11px] text-[#8a6d1c]">
+                            Counter-offer of <strong>{currency(order.quotedPrice)}</strong> sent to customer. Waiting for their response.
+                        </div>
+                    )}
+                </div>
+            ) : order.isGroup ? (
+                /* Group order: show the combined design thumbnails across all members */
+                <div className="mt-3 flex flex-wrap gap-2">
+                    {order.members.flatMap(m => m.items || []).map((it, idx) => (
+                        <button key={idx} type="button" onClick={() => onViewImage?.(imageUrl(it.image), it.name)} className="h-16 w-14 cursor-zoom-in overflow-hidden rounded-xl border border-[#eadfce] bg-[#eadcc9] transition hover:ring-2 hover:ring-[#7d3f24] sm:h-20 sm:w-16" title={`View ${it.name}`}>
+                            <SafeImage src={imageUrl(it.image, "thumb")} alt={it.name} className="h-full w-full object-cover" />
+                        </button>
+                    ))}
+                </div>
+            ) : (
+                <>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        {order.items.map((it, idx) => (
+                            <button key={idx} type="button" onClick={() => onViewImage?.(imageUrl(it.image), it.name)} className="h-16 w-14 cursor-zoom-in overflow-hidden rounded-xl border border-[#eadfce] bg-[#eadcc9] transition hover:ring-2 hover:ring-[#7d3f24] sm:h-20 sm:w-16" title={`View ${it.name}`}>
+                                <SafeImage src={imageUrl(it.image, "thumb")} alt={it.name} className="h-full w-full object-cover" />
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="mt-3 grid gap-1 border-t border-[#f0e6d8] pt-3 text-xs sm:text-sm">
+                        {order.items.map((it, i) => (
+                            <div key={i} className="flex justify-between gap-3 text-[#715e4e]"><span className="min-w-0 truncate">{it.qty}× {it.name}</span><span className="shrink-0">{currency(it.price * it.qty)}</span></div>
+                        ))}
+                        <div className="mt-1 flex justify-between gap-3 font-semibold"><span>Total</span><span>{currency(order.total)}</span></div>
+                    </div>
+                </>
+            )}
 
             {order.notes && <div className="mt-3 rounded-xl bg-[#faf5ed] px-3 py-2 text-xs text-[#5b4636]"><strong>User note:</strong> {order.notes}</div>}
+
             {order.status === "awaiting-verification" && (
                 <div className="mt-3 rounded-xl bg-[#fdf3d6] px-3 py-2 text-xs text-[#8a6d1c]">
                     <div className="flex items-center gap-2 font-semibold"><ShieldAlert size={13} /> User claims they paid</div>
@@ -651,26 +839,49 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
                 </div>
             )}
 
-            {order.status === "paid" && <div className="mt-4"><button onClick={startWork} disabled={verifyBusy} className="flex w-full items-center justify-center gap-2 rounded-full bg-[#7d3f24] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"><Play size={14} /> Start Mehndi session</button></div>}
+            {/* SINGLE-ORDER: start / end work (hidden for groups) */}
+            {order.status === "paid" && !order.isGroup && (
+                <div className="mt-4">
+                    <button onClick={startWork} disabled={verifyBusy} className="flex w-full items-center justify-center gap-2 rounded-full bg-[#7d3f24] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto">
+                        <Play size={14} /> Start Mehndi session
+                    </button>
+                </div>
+            )}
 
-            {order.status === "in-progress" && (
+            {order.status === "in-progress" && !order.isGroup && (
                 <div className="mt-4 space-y-3">
-                    {/* LIVE TIMER */}
                     <AdminLiveTimer startedAt={order.startedAt} />
-
                     <button onClick={endWork} disabled={verifyBusy} className="flex w-full items-center justify-center gap-2 rounded-full bg-[#1d7a3e] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto">
                         <Square size={14} /> End session
                     </button>
                 </div>
             )}
 
-            {order.status === "completed" && <div className="mt-4 flex items-center gap-2 rounded-full bg-[#e2f0e5] px-4 py-2 text-xs font-semibold text-[#1d7a3e]"><CheckCircle2 size={14} /> Completed in {order.durationSeconds >= 60 ? `${Math.round(order.durationSeconds / 60)} min` : `${order.durationSeconds}s`}</div>}
+            {order.status === "completed" && (
+                <div className="mt-4 flex items-center gap-2 rounded-full bg-[#e2f0e5] px-4 py-2 text-xs font-semibold text-[#1d7a3e]">
+                    <CheckCircle2 size={14} />
+                    {order.isGroup
+                        ? `Group completed · ${order.members.length} ${order.members.length === 1 ? "person" : "people"}`
+                        : `Completed in ${order.durationSeconds >= 60 ? `${Math.round(order.durationSeconds / 60)} min` : `${order.durationSeconds}s`}`}
+                </div>
+            )}
 
-            {order.status === "pending" && (
+            {order.status === "pending" && !isCustom && (
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                     <button onClick={() => onAction({ order, mode: "approve" })} className="flex w-full items-center justify-center gap-2 rounded-full bg-[#1d7a3e] px-4 py-2 text-sm font-semibold text-white sm:w-auto"><CheckCircle2 size={14} /> Approve</button>
                     <button onClick={() => onAction({ order, mode: "reject" })} className="flex w-full items-center justify-center gap-2 rounded-full border border-[#e6c4be] bg-white px-4 py-2 text-sm font-semibold text-[#9b3b2b] sm:w-auto"><XCircle size={14} /> Reject</button>
                     <button onClick={() => onAction({ order, mode: "reschedule" })} className="flex w-full items-center justify-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2 text-sm font-semibold sm:w-auto"><Clock size={14} /> Change date/time</button>
+                </div>
+            )}
+
+            {order.status === "approved" && ["cash", "card"].includes(order.paymentMethod) && (
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    <button onClick={confirmPayment} disabled={verifyBusy} className="flex w-full items-center justify-center gap-2 rounded-full bg-[#1d7a3e] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto">
+                        <CheckCircle2 size={14} /> Payment received at counter
+                    </button>
+                    <button onClick={() => onAction({ order, mode: "reject" })} className="flex w-full items-center justify-center gap-2 rounded-full border border-[#e6c4be] bg-white px-5 py-2.5 text-sm font-semibold text-[#9b3b2b] sm:w-auto">
+                        <XCircle size={14} /> Reject / No-show
+                    </button>
                 </div>
             )}
 
@@ -701,6 +912,171 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
     );
 }
 
+/* ---------- Quote Custom Order Modal (accept / counter / reject) ---------- */
+function QuoteCustomOrderModal({ order, onClose, onDone }) {
+    const [mode, setMode] = useState("accept");
+    const [quotedPrice, setQuotedPrice] = useState(order.quotedPrice || "");
+    const [adminNote, setAdminNote] = useState(order.adminNote || "");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+
+    const submit = async () => {
+        setError("");
+        if (mode === "counter" && (!quotedPrice || Number(quotedPrice) <= 0)) {
+            return setError("Please enter a valid counter price");
+        }
+        if (mode === "reject" && !adminNote.trim()) {
+            return setError("Please explain why you're rejecting");
+        }
+
+        setBusy(true);
+        try {
+            await api.patch(`/api/orders/${order.id}/quote`, {
+                action: mode,
+                quotedPrice: mode === "counter" ? Number(quotedPrice) : null,
+                adminNote,
+            });
+            onDone?.();
+        } catch (err) {
+            setError(err.response?.data?.message || "Could not save");
+        } finally { setBusy(false); }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[85] flex items-end justify-center bg-[#20140e]/75 backdrop-blur-sm sm:items-center sm:p-4" onMouseDown={onClose}>
+            <div onMouseDown={e => e.stopPropagation()} className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-[26px] bg-[#fffdf9] p-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-[28px] sm:p-6">
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-[#9a7352]">Custom design request</div>
+                        <h2 className="serif mt-1 text-2xl font-semibold">Respond to customer</h2>
+                        <p className="mt-1 text-xs text-[#8a6d53]">Order #{order.id.slice(0, 8)} · {order.username}</p>
+                    </div>
+                    <button onClick={onClose} className="rounded-full p-2 hover:bg-[#f1e6d8]"><X size={18} /></button>
+                </div>
+
+                {order.customImage && (
+                    <div className="mt-4">
+                        <div className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-[#8a6d53]">Reference image</div>
+                        <div className="rounded-2xl border border-[#eadfce] bg-white p-2">
+                            <SafeImage src={imageUrl(order.customImage)} alt="Reference" className="max-h-64 w-full rounded-xl object-contain" />
+                        </div>
+                    </div>
+                )}
+
+                <div className="mt-4">
+                    <div className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-[#8a6d53]">Customer's description</div>
+                    <div className="rounded-2xl border border-[#eadfce] bg-white p-4 text-sm text-[#5b4636] whitespace-pre-wrap">
+                        {order.customDescription || "(no description)"}
+                    </div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between rounded-2xl border-2 border-[#f1cf8a] bg-[#fdf9ef] px-5 py-4">
+                    <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-[#7d3f24]">Customer's suggested price</div>
+                        <div className="mt-1 serif text-3xl font-bold text-[#7d3f24]">{currency(order.suggestedPrice)}</div>
+                    </div>
+                    <Coins size={28} className="text-[#7d3f24]" />
+                </div>
+
+                <div className="mt-3 text-xs text-[#8a6d53]">
+                    Requested: <strong className="text-[#24170f]">{order.requestedDate} · {order.requestedTime}</strong>
+                </div>
+
+                {order.negotiationHistory?.length > 0 && (
+                    <div className="mt-4">
+                        <div className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-[#8a6d53]">Negotiation history</div>
+                        <div className="space-y-1.5">
+                            {order.negotiationHistory.map((h, i) => (
+                                <div key={i} className="flex items-center justify-between rounded-xl border border-[#eadfce] bg-white px-3 py-2 text-[11px]">
+                                    <span className="text-[#5b4636]">
+                                        <strong className="capitalize">{h.by}</strong> · {h.action}
+                                        {h.note ? ` — "${h.note}"` : ""}
+                                    </span>
+                                    <span className="shrink-0 text-[#8a6d53]">
+                                        {h.price ? currency(h.price) : ""}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <div className="mt-5 grid grid-cols-3 gap-2">
+                    {[
+                        { id: "accept", label: "Accept price", cls: "border-[#1d7a3e] bg-[#e2f0e5] text-[#1d7a3e]" },
+                        { id: "counter", label: "Counter", cls: "border-[#8a6d1c] bg-[#fdf3d6] text-[#8a6d1c]" },
+                        { id: "reject", label: "Reject", cls: "border-[#9b3b2b] bg-[#f8e4df] text-[#9b3b2b]" },
+                    ].map(opt => (
+                        <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setMode(opt.id)}
+                            className={`rounded-2xl border-2 px-3 py-3 text-xs font-bold uppercase tracking-wider transition ${mode === opt.id ? opt.cls : "border-[#eadfce] bg-white text-[#8a6d53] hover:border-[#b07a4f]"}`}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+
+                {mode === "accept" && (
+                    <div className="mt-4 rounded-xl bg-[#e2f0e5] px-4 py-3 text-xs text-[#1d7a3e]">
+                        You'll accept the customer's suggested price of <strong>{currency(order.suggestedPrice)}</strong>. They can then pay immediately.
+                    </div>
+                )}
+
+                {mode === "counter" && (
+                    <label className="mt-4 grid gap-1.5 text-sm font-semibold text-[#5b4636]">
+                        Your counter price <span className="text-red-500">*</span>
+                        <div className="relative">
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7d3f24] font-bold">£</span>
+                            <input
+                                type="number"
+                                min="1"
+                                value={quotedPrice}
+                                onChange={(e) => setQuotedPrice(e.target.value)}
+                                placeholder="e.g. 55"
+                                className="w-full rounded-xl border border-[#ddcdb8] bg-white pl-9 pr-4 py-3 text-base font-semibold outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                            />
+                        </div>
+                    </label>
+                )}
+
+                <label className="mt-4 grid gap-1.5 text-sm font-semibold text-[#5b4636]">
+                    Note to customer {mode === "reject" ? <span className="text-red-500">*</span> : "(optional)"}
+                    <textarea
+                        rows="3"
+                        value={adminNote}
+                        onChange={(e) => setAdminNote(e.target.value)}
+                        placeholder={
+                            mode === "accept" ? "e.g. Confirmed, see you then!"
+                                : mode === "counter" ? "e.g. Includes both hands + name lettering"
+                                    : "e.g. Design not feasible at this time"
+                        }
+                        className="rounded-xl border border-[#ddcdb8] bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                    />
+                </label>
+
+                {error && <div className="mt-3 rounded-xl bg-[#f8e4df] px-4 py-3 text-sm text-[#8c392d]">{error}</div>}
+
+                <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                    <button type="button" onClick={onClose} className="w-full rounded-full border border-[#ded0bc] bg-white px-4 py-3 text-sm font-semibold sm:flex-1">Cancel</button>
+                    <button
+                        type="button"
+                        onClick={submit}
+                        disabled={busy}
+                        className={`w-full rounded-full px-4 py-3 text-sm font-semibold text-white disabled:opacity-60 sm:flex-1 ${mode === "accept" ? "bg-[#1d7a3e] hover:bg-[#155c2d]"
+                            : mode === "counter" ? "bg-[#8a6d1c] hover:bg-[#6b5416]"
+                                : "bg-[#9b3b2b] hover:bg-[#7a2e22]"
+                            }`}
+                    >
+                        {busy ? "Sending…" : mode === "accept" ? "Accept & approve" : mode === "counter" ? "Send counter-offer" : "Reject request"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 /* ---------- Image lightbox ---------- */
 function ImageLightbox({ src, alt, onClose }) {
     return (
@@ -713,6 +1089,7 @@ function ImageLightbox({ src, alt, onClose }) {
         </div>
     );
 }
+
 /* ---------- Admin: Live Session Timer ---------- */
 function AdminLiveTimer({ startedAt }) {
     const [now, setNow] = useState(Date.now());
@@ -754,6 +1131,7 @@ function AdminLiveTimer({ startedAt }) {
         </div>
     );
 }
+
 /* ---------- Order action modal ---------- */
 function OrderActionModal({ order, mode, onClose, onDone }) {
     const [adminNote, setAdminNote] = useState("");
@@ -864,5 +1242,32 @@ function AddDesignModal({ onClose, onSaved }) {
                 </div>
             </div>
         </div>
+    );
+}
+
+/* ---------- Admin: Compact inline timer for a group member row ---------- */
+function MemberInlineTimer({ startedAt }) {
+    const [now, setNow] = useState(Date.now());
+    useEffect(() => {
+        const t = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
+    if (!startedAt) return null;
+    const elapsed = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
+    const h = Math.floor(elapsed / 3600);
+    const m = Math.floor((elapsed % 3600) / 60);
+    const s = elapsed % 60;
+    const timeString = h > 0
+        ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+        : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fdf3d6] border border-[#f0d98c] px-2.5 py-1 text-[11px] font-bold tabular-nums text-[#8a6d1c]">
+            <span className="relative flex h-2 w-2 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#8a6d1c] opacity-70" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-[#8a6d1c]" />
+            </span>
+            <Timer size={11} />
+            {timeString}
+        </span>
     );
 }

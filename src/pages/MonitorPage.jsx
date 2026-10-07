@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Clock, Wifi, WifiOff, CheckCircle2, Users, Ticket, Timer, Maximize, Minimize } from "lucide-react";
+import { Sparkles, Clock, Wifi, WifiOff, CheckCircle2, Users, Ticket, Timer, Maximize, Minimize, Palette } from "lucide-react";
 import { api, API_BASE } from "../lib/api";
 
 const BASE_SECONDS = 30 * 60; // default session length
@@ -196,7 +196,9 @@ export default function MonitorPage({ eventId }) {
                                     )}
                                 </div>
                                 <figcaption className="mt-4 text-center">
-                                    <div className="text-xs text-[#a88b6f]">Working on</div>
+                                    <div className="text-xs text-[#a88b6f]">
+                                        {current.isCustom ? "Custom design" : current.isGroupMember ? "Member's design" : "Working on"}
+                                    </div>
                                     <div className="serif text-2xl font-semibold">{current.itemName || "Design"}</div>
                                 </figcaption>
                             </figure>
@@ -210,6 +212,18 @@ export default function MonitorPage({ eventId }) {
                                     #{current.tokenNumber}
                                 </span>
                                 <div className="serif text-3xl md:text-5xl font-semibold text-[#e9dccb]">{current.username}</div>
+
+                                {/* Context tag: group member or custom */}
+                                {current.isGroupMember && (
+                                    <div className="inline-flex items-center gap-2 rounded-full border border-[#f1cf8a]/30 bg-[#f1cf8a]/10 px-4 py-1.5 text-xs font-bold uppercase tracking-[.2em] text-[#f1cf8a]">
+                                        <Users size={13} /> Group · {current.groupOwner}
+                                    </div>
+                                )}
+                                {current.isCustom && (
+                                    <div className="inline-flex items-center gap-2 rounded-full border border-[#f1cf8a]/40 bg-[#f1cf8a]/10 px-4 py-1.5 text-xs font-bold uppercase tracking-[.2em] text-[#f1cf8a]">
+                                        <Palette size={13} /> Custom design
+                                    </div>
+                                )}
 
                                 {current.startedAt && (
                                     <div className="mt-3 inline-flex items-center gap-3 rounded-2xl border border-[#1d7a3e]/40 bg-[#1d7a3e]/10 px-5 py-3">
@@ -302,6 +316,9 @@ export default function MonitorPage({ eventId }) {
                         <div className="flex items-center gap-3 mb-5">
                             <div className="grid h-10 w-10 place-items-center rounded-full bg-[#f1cf8a]/15 text-[#f1cf8a]"><Users size={19} /></div>
                             <h2 className="serif text-xl font-bold">Up next</h2>
+                            <div className="ml-auto rounded-full bg-white/5 px-3 py-1 text-xs font-semibold text-[#d9c9b8]">
+                                {data.upNext.length} waiting
+                            </div>
                         </div>
                         {data.upNext.length === 0 ? (
                             <div className="py-10 text-center text-sm text-[#8a6d53]">No one in the queue</div>
@@ -319,7 +336,21 @@ export default function MonitorPage({ eventId }) {
                                         )}
                                         <div className="min-w-0 flex-1">
                                             <div className="truncate text-base font-semibold">{t.username}</div>
-                                            {i === 0 && <div className="text-xs font-semibold text-[#f1cf8a]">Next in line</div>}
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                {t.isGroupMember && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#f1cf8a]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f1cf8a]">
+                                                        <Users size={10} /> Group · {t.groupOwner}
+                                                    </span>
+                                                )}
+                                                {t.isCustom && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#f1cf8a]/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f1cf8a]">
+                                                        <Palette size={10} /> Custom
+                                                    </span>
+                                                )}
+                                                {i === 0 && (
+                                                    <span className="text-xs font-semibold text-[#f1cf8a]">Next in line</span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
@@ -331,6 +362,9 @@ export default function MonitorPage({ eventId }) {
                         <div className="flex items-center gap-3 mb-5">
                             <div className="grid h-10 w-10 place-items-center rounded-full bg-[#1d7a3e]/20 text-[#4ade80]"><CheckCircle2 size={19} /></div>
                             <h2 className="serif text-xl font-bold">Recently completed</h2>
+                            <div className="ml-auto rounded-full bg-white/5 px-3 py-1 text-xs font-semibold text-[#d9c9b8]">
+                                {data.recentlyCompleted.length} done
+                            </div>
                         </div>
                         {data.recentlyCompleted.length === 0 ? (
                             <div className="py-10 text-center text-sm text-[#8a6d53]">No completed tokens yet</div>
@@ -343,9 +377,19 @@ export default function MonitorPage({ eventId }) {
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <div className="truncate text-base font-semibold text-[#d9c9b8]">{t.username}</div>
-                                            <div className="flex items-center gap-2 text-xs font-semibold text-[#4ade80]">
+                                            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-[#4ade80]">
                                                 <CheckCircle2 size={12} /> Done
                                                 {t.durationSeconds > 0 && <span className="text-[#8a6d53]">{formatTimer(t.durationSeconds)}</span>}
+                                                {t.isGroupMember && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#f1cf8a]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f1cf8a]">
+                                                        <Users size={10} /> Group · {t.groupOwner}
+                                                    </span>
+                                                )}
+                                                {t.isCustom && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#f1cf8a]/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f1cf8a]">
+                                                        <Palette size={10} /> Custom
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
