@@ -1,390 +1,381 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-    X, Calendar, Clock, Loader2, CheckCircle2, XCircle, Hourglass, CreditCard,
-    ShieldAlert, AlertCircle, Maximize2, Sparkles, PartyPopper, Lock, Wallet, RefreshCw,
-    Pencil, Palette, Coins,
+    X, Minus, Plus, Trash2, Loader2, Search, AlertCircle, CheckCircle2,
+    ArrowRight, Sparkles, Image as ImageIcon,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { imageUrl, currency } from "../lib/format";
+import SafeImage from "../components/SafeImage";
 
-function formatDuration(seconds) {
-    if (!seconds || seconds < 60) return `${seconds || 0}s`;
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
-}
-
-const STATUS_STYLES = {
-    pending: { icon: <Hourglass size={13} />, label: "Pending approval", cls: "bg-[#fdf3d6] text-[#8a6d1c]" },
-    approved: { icon: <CheckCircle2 size={13} />, label: "Awaiting payment", cls: "bg-[#e2f0e5] text-[#1d7a3e]" },
-    "awaiting-verification": { icon: <ShieldAlert size={13} />, label: "Pending verification", cls: "bg-[#fdf3d6] text-[#8a6d1c]" },
-    rejected: { icon: <XCircle size={13} />, label: "Rejected", cls: "bg-[#f8e4df] text-[#8c392d]" },
-    paid: { icon: <CheckCircle2 size={13} />, label: "Paid ✓", cls: "bg-[#e2f0e5] text-[#1d7a3e]" },
-    "in-progress": { icon: <Sparkles size={13} />, label: "In progress 🎨", cls: "bg-[#fdf3d6] text-[#8a6d1c]" },
-    completed: { icon: <CheckCircle2 size={13} />, label: "Ready ✓", cls: "bg-[#e2f0e5] text-[#1d7a3e]" },
-    "custom-pending": { icon: <Palette size={13} />, label: "Awaiting studio quote", cls: "bg-[#fdf9ef] text-[#7d3f24] border border-[#f1cf8a]" },
-    "quote-proposed": { icon: <Coins size={13} />, label: "Counter-offer received", cls: "bg-[#fdf3d6] text-[#8a6d1c]" },
-};
-
-const PAYMENT_BADGE = {
-    upi: { label: "📱 UPI", cls: "border-[#1d7a3e]/30 bg-[#e2f0e5] text-[#1d7a3e]" },
-    card: { label: "💳 Card", cls: "border-[#2a3a7d]/30 bg-[#e6e8f7] text-[#2a3a7d]" },
-    cash: { label: "💵 Cash", cls: "border-[#8a6d1c]/30 bg-[#fdf3d6] text-[#8a6d1c]" },
-};
-
-export default function MyOrdersModal({ onClose, onPay, onModify }) {
-    const [orders, setOrders] = useState([]);
+export default function ModifyOrderModal({ order, activeEvent, onClose, onSuccess }) {
+    const [catalog, setCatalog] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
-    const [lightbox, setLightbox] = useState(null);
 
-    const load = (silent = false) => {
-        if (!silent) setLoading(true);
+    // Current items in the order — start from what's already there
+    const [items, setItems] = useState(() =>
+        Array.isArray(order.items) ? order.items.map(it => ({ ...it })) : []
+    );
+
+    const [categoryFilter, setCategoryFilter] = useState("all");
+    const [search, setSearch] = useState("");
+
+    /* ---------- Load the right catalog ---------- */
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
         setError("");
-        api.get(`/api/orders?t=${Date.now()}`)
-            .then(({ data }) => setOrders(Array.isArray(data) ? data : []))
-            .catch((err) => setError(err.response?.data?.message || "Could not load orders"))
-            .finally(() => setLoading(false));
+
+        const eventId = order.eventId || activeEvent?.id;
+
+        const loadCatalog = async () => {
+            try {
+                const { data } = await api.get("/api/designs");
+                let list = Array.isArray(data) ? data : [];
+
+                if (eventId) {
+                    // Event order: filter to the event's designs & apply price overrides
+                    try {
+                        const { data: evRes } = await api.get(`/api/events/${eventId}`);
+                        const ev = evRes?.event;
+                        const overrides = ev?.priceOverrides || {};
+                        const ids = Array.isArray(ev?.designIds) ? ev.designIds : [];
+
+                        if (ids.length > 0 && !ids.includes("all")) {
+                            list = list.filter(d => ids.includes(d.id));
+                        }
+                        list = list.map(d => ({
+                            ...d,
+                            price: overrides[d.id] != null ? Number(overrides[d.id]) : d.price,
+                        }));
+                    } catch (e) {
+                        console.warn("[ModifyOrderModal] failed to load event, falling back to full catalog:", e?.message);
+                    }
+                }
+
+                if (!cancelled) setCatalog(list);
+            } catch (err) {
+                if (!cancelled) setError(err.response?.data?.message || "Could not load designs");
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        };
+
+        loadCatalog();
+        return () => { cancelled = true; };
+    }, [order.eventId, activeEvent?.id]);
+
+    /* ---------- Derived ---------- */
+    const categories = useMemo(() => {
+        const map = new Map();
+        catalog.forEach(d => {
+            if (d.categoryId && d.categoryName) map.set(d.categoryId, d.categoryName);
+        });
+        return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+    }, [catalog]);
+
+    const filteredCatalog = useMemo(() => {
+        let list = catalog;
+        if (categoryFilter !== "all") list = list.filter(d => d.categoryId === categoryFilter);
+        if (search.trim()) {
+            const q = search.trim().toLowerCase();
+            list = list.filter(d =>
+                d.name?.toLowerCase().includes(q) ||
+                d.categoryName?.toLowerCase().includes(q)
+            );
+        }
+        return list;
+    }, [catalog, categoryFilter, search]);
+
+    const newTotal = items.reduce((n, x) => n + (x.price || 0) * (x.qty || 1), 0);
+    const previousTotal = order.total || 0;
+    const diff = newTotal - previousTotal;
+    const diffLabel =
+        Math.abs(diff) < 0.01 ? "No price change"
+            : diff > 0 ? `+ ${currency(diff)} to pay`
+                : `${currency(Math.abs(diff))} refund / credit`;
+
+    const isItemInCart = (designId) => items.some(i => i.id === designId);
+
+    /* ---------- Actions ---------- */
+    const addDesign = (design) => {
+        setItems(prev => {
+            const found = prev.find(x => x.id === design.id);
+            if (found) {
+                return prev.map(x => x.id === design.id ? { ...x, qty: (x.qty || 1) + 1 } : x);
+            }
+            return [
+                ...prev,
+                {
+                    id: design.id,
+                    name: design.name,
+                    price: design.price,
+                    image: design.image,
+                    categoryName: design.categoryName,
+                    amountType: design.amountType,
+                    qty: 1,
+                },
+            ];
+        });
     };
 
-    useEffect(() => { load(); }, []);
-    useEffect(() => {
-        const handler = () => load();
-        window.addEventListener("mehndi:order-update", handler);
-        return () => window.removeEventListener("mehndi:order-update", handler);
-    }, []);
+    const removeItem = (id) => setItems(prev => prev.filter(x => x.id !== id));
 
-    useEffect(() => {
-        if (!lightbox) return;
-        const handler = (e) => { if (e.key === "Escape") setLightbox(null); };
-        window.addEventListener("keydown", handler);
-        return () => window.removeEventListener("keydown", handler);
-    }, [lightbox]);
+    const changeQty = (id, delta) =>
+        setItems(prev => prev.map(x =>
+            x.id === id ? { ...x, qty: Math.max(1, (x.qty || 1) + delta) } : x
+        ));
 
-    const respondToQuote = async (orderId, action) => {
+    const save = async () => {
+        if (items.length === 0) return setError("Order must contain at least one design");
+        setSaving(true);
+        setError("");
         try {
-            await api.patch(`/api/orders/${orderId}/quote-response`, { action });
-            load();
+            const cleanItems = items.map(({ id, name, price, qty, image, categoryName, amountType }) => ({
+                id, name, price, qty, image, categoryName, amountType,
+            }));
+            const { data } = await api.patch(`/api/orders/${order.id}/items`, { items: cleanItems });
+            onSuccess?.(data);
         } catch (err) {
-            alert(err.response?.data?.message || "Failed to respond");
+            setError(err.response?.data?.message || "Could not save your changes");
+        } finally {
+            setSaving(false);
         }
     };
 
     return (
-        <>
-            <div className="fixed inset-0 z-[75] flex items-end justify-center bg-[#20140e]/70 backdrop-blur-sm sm:items-center sm:p-4" onMouseDown={onClose}>
-                <div onMouseDown={e => e.stopPropagation()} className="flex h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[26px] bg-[#fffdf9] shadow-2xl sm:h-[90vh] sm:rounded-[28px]">
-                    <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#eadfce] bg-[#faf5ed] px-4 py-3.5 sm:px-6 sm:py-4">
-                        <div className="min-w-0">
-                            <div className="text-[10px] uppercase tracking-[.2em] text-[#8a6d53] sm:tracking-[.24em]">Appointments</div>
-                            <div className="serif truncate text-xl font-semibold sm:text-2xl">My orders</div>
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-[#20140e]/75 backdrop-blur-sm sm:items-center sm:p-4"
+            onMouseDown={onClose}>
+            <div onMouseDown={e => e.stopPropagation()}
+                className="flex h-[96dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-[26px] bg-[#fffdf9] shadow-2xl sm:h-[92vh] sm:rounded-[28px]">
+
+                {/* Header */}
+                <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#eadfce] bg-[#faf5ed] px-4 py-3.5 sm:px-6 sm:py-4">
+                    <div className="min-w-0">
+                        <div className="text-[10px] uppercase tracking-[.2em] text-[#8a6d53] sm:tracking-[.24em]">
+                            {order.eventId ? "Modify event order" : "Modify order"}
                         </div>
-                        <button onClick={onClose} aria-label="Close orders" className="grid h-10 w-10 shrink-0 place-items-center rounded-full hover:bg-[#f1e6d8] active:bg-[#eadfce]"><X size={18} /></button>
+                        <div className="serif truncate text-xl font-semibold sm:text-2xl">
+                            Order #{order.id.slice(0, 8)}
+                        </div>
                     </div>
+                    <button onClick={onClose} aria-label="Close"
+                        className="grid h-10 w-10 shrink-0 place-items-center rounded-full hover:bg-[#f1e6d8] active:bg-[#eadfce]">
+                        <X size={18} />
+                    </button>
+                </div>
 
-                    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-5">
-                        {error && <div className="mb-4 rounded-xl bg-[#f8e4df] px-4 py-3 text-sm text-[#8c392d]">{error}</div>}
+                {/* Body — two columns on desktop */}
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                    <div className="grid gap-4 p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-5 md:grid-cols-[minmax(0,1fr)_minmax(0,340px)]">
 
-                        {loading ? (
-                            <div className="grid h-full place-items-center text-[#8a6d53]"><Loader2 className="animate-spin" /></div>
-                        ) : orders.length === 0 ? (
-                            <div className="grid h-full place-items-center text-center text-[#8a6d53]">
-                                <div className="max-w-xs">
-                                    <Calendar className="mx-auto" size={34} />
-                                    <p className="serif mt-4 text-lg sm:text-xl">No appointments yet</p>
-                                    <p className="mt-1 text-xs sm:text-sm">Add designs to your cart and request a slot.</p>
+                        {/* LEFT: catalog picker */}
+                        <div className="min-w-0 space-y-3">
+                            <div className="flex items-center gap-2">
+                                <div className="relative flex-1">
+                                    <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#a38974]" />
+                                    <input
+                                        type="text"
+                                        value={search}
+                                        onChange={e => setSearch(e.target.value)}
+                                        placeholder="Search designs…"
+                                        className="w-full rounded-xl border border-[#ddcdb8] bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                                    />
                                 </div>
                             </div>
-                        ) : (
-                            <div className="grid gap-3.5 sm:gap-4">
-                                {orders.map(o => {
-                                    const S = STATUS_STYLES[o.status] || STATUS_STYLES.pending;
-                                    const d = o.proposedDate || o.requestedDate;
-                                    const t = o.proposedTime || o.requestedTime;
-                                    const isPending = o.status === "pending";
-                                    const isAwaiting = o.status === "awaiting-verification";
-                                    const isApproved = o.status === "approved";
-                                    const isPaid = o.status === "paid";
-                                    const isInProgress = o.status === "in-progress";
-                                    const isCompleted = o.status === "completed";
-                                    const isCustom = o.type === "custom";
-                                    const isQuoteProposed = o.status === "quote-proposed";
-                                    const isCustomPending = o.status === "custom-pending";
-                                    const blurThumb = isPending || isAwaiting || isCustomPending || isQuoteProposed;
 
-                                    const isCounterPayment = ["cash", "card"].includes(o.paymentMethod);
-                                    const payBadge = PAYMENT_BADGE[o.paymentMethod];
+                            {categories.length > 0 && (
+                                <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                                    <button
+                                        onClick={() => setCategoryFilter("all")}
+                                        className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${categoryFilter === "all"
+                                            ? "border-[#24170f] bg-[#24170f] text-white"
+                                            : "border-[#ded0bc] bg-white text-[#5b4636] hover:bg-[#f4eadc]"}`}
+                                    >
+                                        All
+                                    </button>
+                                    {categories.map(c => (
+                                        <button
+                                            key={c.id}
+                                            onClick={() => setCategoryFilter(c.id)}
+                                            className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${categoryFilter === c.id
+                                                ? "border-[#7d3f24] bg-[#7d3f24] text-white"
+                                                : "border-[#ded0bc] bg-white text-[#5b4636] hover:bg-[#f4eadc]"}`}
+                                        >
+                                            {c.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
 
-                                    const canModify = !isCustom && ["pending", "approved", "awaiting-verification"].includes(o.status);
-
-                                    return (
-                                        <div key={o.id} className={`rounded-2xl border bg-white p-3.5 sm:p-4 ${isCustom && (isCustomPending || isQuoteProposed) ? "border-2 border-[#f1cf8a]" : "border-[#eadfce]"}`}>
-                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                                                <div className="min-w-0">
-                                                    <div className="truncate text-[10px] uppercase tracking-[.16em] text-[#8a6d53] sm:tracking-[.18em]">Order #{o.id.slice(0, 8)}</div>
-
-                                                    {o.tokenNumber && (
-                                                        <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#f1cf8a]/30 border border-[#f1cf8a]/50 px-2.5 py-0.5 text-[11px] font-bold text-[#7d3f24]">
-                                                            🎟️ {o.eventName ? `${o.eventName} - ` : ""}Token #{o.tokenNumber}
-                                                        </div>
-                                                    )}
-
-                                                    {payBadge && (
-                                                        <span className={`ml-2 mt-1 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${payBadge.cls}`}>
-                                                            {payBadge.label}
-                                                        </span>
-                                                    )}
-
-                                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
-                                                        <span className="inline-flex items-center gap-1.5"><Calendar size={13} className="text-[#7d3f24]" /> {d}</span>
-                                                        <span className="inline-flex items-center gap-1.5"><Clock size={13} className="text-[#7d3f24]" /> {t}</span>
-                                                        {o.proposedDate && o.proposedDate !== o.requestedDate && <span className="rounded-full bg-[#f4eadc] px-2 py-0.5 text-[10px]">rescheduled</span>}
-                                                    </div>
-                                                </div>
-                                                <span className={`inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold sm:text-xs ${S.cls}`}>{S.icon} {S.label}</span>
-                                            </div>
-
-                                            {/* Custom order block */}
-                                            {isCustom ? (
-                                                <div className="mt-3 rounded-2xl border-2 border-dashed border-[#f1cf8a] bg-[#fdf9ef] p-4">
-                                                    <div className="flex items-start gap-3">
-                                                        {o.customImage && !blurThumb && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setLightbox({ src: imageUrl(o.customImage), alt: "Your reference" })}
-                                                                className="h-20 w-16 shrink-0 overflow-hidden rounded-xl border border-[#eadfce] bg-white transition hover:ring-2 hover:ring-[#7d3f24]"
-                                                            >
-                                                                <img src={imageUrl(o.customImage)} alt="Reference" className="h-full w-full object-cover" />
-                                                            </button>
-                                                        )}
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="text-[10px] font-bold uppercase tracking-widest text-[#7d3f24]">🎨 Custom design request</div>
-                                                            <div className="mt-1 line-clamp-3 text-xs text-[#5b4636] whitespace-pre-wrap">{o.customDescription}</div>
-                                                            <div className="mt-2 flex flex-wrap gap-2">
-                                                                <span className="rounded-full bg-[#f1cf8a]/40 px-2.5 py-0.5 text-[10px] font-bold text-[#7d3f24]">
-                                                                    Your price: {currency(o.suggestedPrice)}
-                                                                </span>
-                                                                {o.quotedPrice && (
-                                                                    <span className="rounded-full bg-[#fdf3d6] px-2.5 py-0.5 text-[10px] font-bold text-[#8a6d1c]">
-                                                                        Studio: {currency(o.quotedPrice)}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="mt-3 flex flex-wrap gap-2.5 sm:mt-4 sm:gap-3">
-                                                    {o.items.map((it, idx) =>
-                                                        blurThumb ? (
-                                                            <div key={idx} title="Revealed after studio confirms" className="relative grid h-24 w-20 place-items-center overflow-hidden rounded-xl border border-[#e6d3bd] bg-gradient-to-br from-[#f3e6d5] via-[#ead7bf] to-[#dcc3a3] sm:h-32 sm:w-28 sm:rounded-2xl">
-                                                                <div className="absolute inset-0 opacity-40" style={{ backgroundImage: "radial-gradient(#9b6d43 1px, transparent 1px)", backgroundSize: "10px 10px" }} />
-                                                                <div className="relative flex flex-col items-center gap-1.5 px-1 text-center">
-                                                                    <div className="grid h-9 w-9 place-items-center rounded-full bg-white/85 shadow sm:h-10 sm:w-10">
-                                                                        {isPending ? <Lock size={16} className="text-[#7d3f24]" /> : <ShieldAlert size={16} className="text-[#8a6d1c]" />}
-                                                                    </div>
-                                                                    <span className="line-clamp-2 text-[9px] font-semibold leading-tight text-[#7d3f24] sm:text-[10px]">{it.name}</span>
-                                                                </div>
-                                                            </div>
-                                                        ) : (
-                                                            <button key={idx} type="button" onClick={() => setLightbox({ src: imageUrl(it.image), alt: it.name })} className="group relative h-24 w-20 cursor-zoom-in overflow-hidden rounded-xl border border-[#eadfce] bg-[#eadcc9] transition hover:ring-2 hover:ring-[#7d3f24] sm:h-32 sm:w-28 sm:rounded-2xl" title={`Click to view ${it.name}`}>
-                                                                <img src={imageUrl(it.image)} alt={it.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                                                                <div className="absolute inset-0 hidden flex-col items-center justify-end bg-gradient-to-t from-black/70 to-transparent pb-2 opacity-0 transition group-hover:opacity-100 sm:flex">
-                                                                    <Maximize2 size={14} className="text-white" />
-                                                                    <span className="mt-0.5 text-[10px] font-semibold text-white">Enlarge</span>
-                                                                </div>
-                                                            </button>
-                                                        )
+                            {loading ? (
+                                <div className="grid h-40 place-items-center text-[#8a6d53]">
+                                    <Loader2 className="animate-spin" />
+                                </div>
+                            ) : filteredCatalog.length === 0 ? (
+                                <div className="rounded-2xl border border-dashed border-[#d9c7b0] bg-white p-8 text-center text-sm text-[#8a6d53]">
+                                    No designs match this filter.
+                                </div>
+                            ) : (
+                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-2">
+                                    {filteredCatalog.map(d => {
+                                        const inCart = isItemInCart(d.id);
+                                        return (
+                                            <button
+                                                key={d.id}
+                                                type="button"
+                                                onClick={() => addDesign(d)}
+                                                className={`flex items-center gap-3 rounded-2xl border bg-white p-2.5 text-left transition hover:-translate-y-0.5 hover:shadow-md ${inCart ? "border-[#7d3f24]" : "border-[#eadfce]"}`}
+                                            >
+                                                <div className="h-14 w-12 shrink-0 overflow-hidden rounded-lg bg-[#eadcc9]">
+                                                    {d.image ? (
+                                                        <SafeImage src={imageUrl(d.image, "thumb")} alt="" className="h-full w-full object-cover" />
+                                                    ) : (
+                                                        <div className="grid h-full w-full place-items-center text-[#a38974]"><ImageIcon size={14} /></div>
                                                     )}
                                                 </div>
-                                            )}
-
-                                            {isPending && (
-                                                <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#f0d9b5] bg-[#fff6e6] px-3 py-2.5 text-[11px] font-semibold leading-5 text-[#8a5a1c]">
-                                                    <Hourglass size={14} className="mt-0.5 shrink-0" />
-                                                    <span>Awaiting admin approval — designs revealed once confirmed.</span>
-                                                </div>
-                                            )}
-
-                                            {isCustomPending && (
-                                                <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#f0d9b5] bg-[#fff6e6] px-3 py-2.5 text-[11px] font-semibold leading-5 text-[#8a5a1c]">
-                                                    <Palette size={14} className="mt-0.5 shrink-0" />
-                                                    <span>Waiting for the studio to review your custom design and respond to your price.</span>
-                                                </div>
-                                            )}
-
-                                            {isQuoteProposed && (
-                                                <div className="mt-3 rounded-2xl border border-[#f0d98c] bg-gradient-to-br from-[#fdf3d6] to-[#fff8e5] px-4 py-3">
-                                                    <div className="text-sm font-bold text-[#8a6d1c]">
-                                                        Studio proposed <span className="serif text-xl">{currency(o.quotedPrice)}</span>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="truncate text-sm font-semibold">{d.name}</div>
+                                                    <div className="mt-0.5 truncate text-[10px] uppercase tracking-wider text-[#8a6d53]">
+                                                        {d.categoryName || "—"}
                                                     </div>
-                                                    <div className="mt-1 text-xs text-[#8a6d1c]">
-                                                        {o.adminNote || "Review and accept to continue, or decline if you'd like a different price."}
+                                                    <div className="mt-1 text-xs font-bold text-[#7d3f24]">{currency(d.price)}</div>
+                                                </div>
+                                                <div className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${inCart ? "bg-[#7d3f24] text-white" : "bg-[#f4eadc] text-[#7d3f24]"}`}>
+                                                    {inCart ? <CheckCircle2 size={14} /> : <Plus size={14} />}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* RIGHT: current items + totals */}
+                        <div className="min-w-0 space-y-3 md:sticky md:top-0 md:h-fit">
+                            <div className="rounded-2xl border border-[#f1cf8a] bg-[#fdf9ef] p-3">
+                                <div className="mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-[#7d3f24]">
+                                    <span>Your order ({items.length})</span>
+                                    <span>{currency(newTotal)}</span>
+                                </div>
+
+                                {items.length === 0 ? (
+                                    <div className="rounded-xl border border-dashed border-[#d9c7b0] bg-white p-4 text-center text-xs text-[#8a6d53]">
+                                        Add at least one design
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {items.map(it => (
+                                            <div key={it.id} className="flex items-center gap-2 rounded-xl border border-[#eadfce] bg-white p-2">
+                                                <div className="h-12 w-10 shrink-0 overflow-hidden rounded-md bg-[#eadcc9]">
+                                                    {it.image && (
+                                                        <SafeImage src={imageUrl(it.image, "thumb")} alt="" className="h-full w-full object-cover" />
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="truncate text-xs font-semibold">{it.name}</div>
+                                                    <div className="mt-0.5 text-[10px] text-[#8a6d53]">{currency(it.price)} each</div>
+                                                    <div className="mt-1 flex items-center gap-1.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => changeQty(it.id, -1)}
+                                                            className="rounded-full border border-[#ded0bc] p-1 hover:bg-[#f4eadc]"
+                                                            aria-label="Decrease"
+                                                        >
+                                                            <Minus size={10} />
+                                                        </button>
+                                                        <span className="w-5 text-center text-[11px] font-bold">{it.qty || 1}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => changeQty(it.id, 1)}
+                                                            className="rounded-full border border-[#ded0bc] p-1 hover:bg-[#f4eadc]"
+                                                            aria-label="Increase"
+                                                        >
+                                                            <Plus size={10} />
+                                                        </button>
                                                     </div>
                                                 </div>
-                                            )}
-
-                                            {isAwaiting && (
-                                                <div className="mt-3 break-words rounded-xl bg-[#fdf3d6] px-3 py-2 text-[11px] font-semibold text-[#8a6d1c]">Payment submitted (UTR: <span className="font-mono">{o.utr}</span>). Awaiting studio verification.</div>
-                                            )}
-
-                                            {isInProgress && <LiveTimer startedAt={o.startedAt} />}
-
-                                            {isCompleted && (
-                                                <div className="mt-3 overflow-hidden rounded-2xl border border-[#c8e6d2] bg-gradient-to-br from-[#eaf7ee] via-[#f4fbf6] to-[#f8fdf9] p-4 sm:p-5">
-                                                    <div className="flex items-start gap-3 sm:gap-4">
-                                                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#1d7a3e] text-white shadow-lg shadow-[#1d7a3e]/30 sm:h-12 sm:w-12">
-                                                            <CheckCircle2 size={20} className="sm:hidden" /><CheckCircle2 size={24} className="hidden sm:block" />
-                                                        </div>
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="serif text-lg font-semibold text-[#1d7a3e] sm:text-xl">Your Mehndi is ready! 🎨</div>
-                                                            <p className="mt-1.5 text-xs leading-5 text-[#3d5c47] sm:text-sm sm:leading-6">Thank you for choosing <strong>Mehndi Studio</strong> — it was a joy creating this for you.{o.durationSeconds ? <> Total time: <strong>{formatDuration(o.durationSeconds)}</strong>.</> : null}</p>
-                                                            <p className="mt-2 flex items-center gap-1.5 text-[11px] italic text-[#4a7a5c] sm:text-xs"><PartyPopper size={12} className="shrink-0" />We can't wait to welcome you back. ✨</p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {!isCustom && (
-                                                <div className="mt-3 grid gap-1 border-t border-[#f0e6d8] pt-3 text-xs sm:mt-4 sm:text-sm">
-                                                    {o.items.map((it, idx) => (
-                                                        <div key={idx} className="flex justify-between gap-3 text-[#715e4e]"><span className="min-w-0 truncate">{it.qty}× {it.name}</span><span className="shrink-0">{currency(it.price * it.qty)}</span></div>
-                                                    ))}
-                                                    <div className="mt-2 flex justify-between font-semibold"><span>Total</span><span>{currency(o.total)}</span></div>
-                                                </div>
-                                            )}
-
-                                            {isCustom && o.total > 0 && (
-                                                <div className="mt-3 grid gap-1 border-t border-[#f0e6d8] pt-3 text-xs sm:text-sm">
-                                                    <div className="flex justify-between font-semibold"><span>Total</span><span>{currency(o.total)}</span></div>
-                                                </div>
-                                            )}
-
-                                            {o.paymentRejectReason && (
-                                                <div className="mt-3 flex items-start gap-2 rounded-xl bg-[#f8e4df] px-3 py-2 text-xs text-[#8c392d]">
-                                                    <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                                                    <div className="min-w-0 break-words"><strong>Payment not received:</strong> {o.paymentRejectReason}</div>
-                                                </div>
-                                            )}
-
-                                            {o.adminNote && !isQuoteProposed && (
-                                                <div className="mt-3 break-words rounded-xl bg-[#f5ecdf] px-3 py-2 text-xs text-[#5b4636]">
-                                                    <strong>Studio note:</strong> {o.adminNote}
-                                                </div>
-                                            )}
-
-                                            {/* Modify design button (standard orders only) */}
-                                            {canModify && (
                                                 <button
-                                                    onClick={() => onModify?.(o)}
-                                                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2.5 text-xs font-semibold text-[#5b4636] transition hover:bg-[#f4eadc]"
+                                                    type="button"
+                                                    onClick={() => removeItem(it.id)}
+                                                    className="shrink-0 rounded-full p-1.5 text-[#a17e63] hover:bg-red-50 hover:text-red-500"
+                                                    aria-label="Remove"
                                                 >
-                                                    <Pencil size={13} /> Modify design
+                                                    <Trash2 size={13} />
                                                 </button>
-                                            )}
-
-                                            {/* Counter-offer response buttons */}
-                                            {isQuoteProposed && (
-                                                <div className="mt-4 space-y-2">
-                                                    <div className="flex flex-col gap-2 sm:flex-row">
-                                                        <button
-                                                            onClick={() => respondToQuote(o.id, "accept")}
-                                                            className="flex-1 flex min-h-[48px] items-center justify-center gap-2 rounded-full bg-[#1d7a3e] px-5 py-3 text-sm font-semibold text-white hover:bg-[#155c2d]"
-                                                        >
-                                                            <CheckCircle2 size={15} /> Accept {currency(o.quotedPrice)}
-                                                        </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                if (!confirm("Decline this counter-offer? Studio will send a new price.")) return;
-                                                                respondToQuote(o.id, "decline");
-                                                            }}
-                                                            className="flex-1 flex min-h-[48px] items-center justify-center gap-2 rounded-full border border-[#e6c4be] bg-white px-5 py-3 text-sm font-semibold text-[#9b3b2b] hover:bg-[#fdf2ef]"
-                                                        >
-                                                            <XCircle size={15} /> Decline
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* UPI standard order: Pay now */}
-                                            {isApproved && !isCounterPayment && (
-                                                <button onClick={() => onPay(o)} className="mt-3 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-[#24170f] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5">
-                                                    <CreditCard size={15} /> Pay now {currency(o.total)}
-                                                </button>
-                                            )}
-
-                                            {/* Cash/Card: Pay at counter */}
-                                            {isApproved && isCounterPayment && (
-                                                <div className="mt-3 space-y-3">
-                                                    <div className="flex items-start gap-3 rounded-2xl border border-[#f0d98c] bg-gradient-to-br from-[#fdf3d6] to-[#fff8e5] px-4 py-3">
-                                                        <Wallet size={20} className="mt-0.5 shrink-0 text-[#8a6d1c]" />
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="text-sm font-bold text-[#8a6d1c]">
-                                                                Pay at counter by {o.paymentMethod === "cash" ? "cash" : "card"}
-                                                            </div>
-                                                            <div className="mt-0.5 text-xs text-[#8a6d1c]/80">
-                                                                Show order <strong className="font-mono">#{o.id.slice(0, 8)}</strong> at the studio. Your token will be assigned once payment is received.
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    <button onClick={() => onPay(o)} className="flex w-full items-center justify-center gap-2 rounded-full border border-[#ded0bc] bg-white px-4 py-2.5 text-xs font-semibold text-[#5b4636] transition hover:bg-[#f4eadc]">
-                                                        <RefreshCw size={13} /> Change to UPI / Pay online instead
-                                                    </button>
-                                                </div>
-                                            )}
-
-                                            {isPaid && (
-                                                <div className="mt-4 flex items-center gap-2 rounded-full bg-[#e2f0e5] px-4 py-2 text-[11px] font-semibold text-[#1d7a3e] sm:text-xs">
-                                                    <CheckCircle2 size={14} className="shrink-0" />
-                                                    <span className="min-w-0 truncate">Payment received · {o.paymentId}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                        )}
+
+                            {/* Price diff */}
+                            <div className="rounded-2xl border border-[#eadfce] bg-white p-3 text-xs">
+                                <div className="flex justify-between text-[#8a6d53]">
+                                    <span>Previous total</span>
+                                    <span className="font-semibold text-[#5b4636]">{currency(previousTotal)}</span>
+                                </div>
+                                <div className="mt-1 flex justify-between text-[#8a6d53]">
+                                    <span>New total</span>
+                                    <span className="font-semibold text-[#5b4636]">{currency(newTotal)}</span>
+                                </div>
+                                <div className={`mt-2 flex items-center justify-between rounded-lg px-3 py-2 text-[11px] font-bold ${Math.abs(diff) < 0.01
+                                    ? "bg-[#f4eadc] text-[#8a6d53]"
+                                    : diff > 0
+                                        ? "bg-[#fdf3d6] text-[#8a6d1c]"
+                                        : "bg-[#e2f0e5] text-[#1d7a3e]"}`}>
+                                    <span>Difference</span>
+                                    <span>{diffLabel}</span>
+                                </div>
+                                {Math.abs(diff) > 0.01 && (
+                                    <div className="mt-2 flex items-start gap-2 rounded-lg bg-[#f5ecdf] px-3 py-2 text-[10px] text-[#5b4636]">
+                                        <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                                        <span>
+                                            {diff > 0
+                                                ? "You'll be asked to pay the difference after saving."
+                                                : "Your payment will be adjusted down. Studio will handle any credit."}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {error && (
+                                <div className="flex items-start gap-2 rounded-xl bg-[#f8e4df] px-3 py-2 text-xs text-[#8c392d]">
+                                    <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                                    <span>{error}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer actions */}
+                <div className="shrink-0 border-t border-[#eadfce] bg-[#fffdf9] p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={saving}
+                            className="w-full rounded-full border border-[#ded0bc] bg-white px-5 py-3 text-sm font-semibold text-[#5b4636] hover:bg-[#f4eadc] disabled:opacity-60 sm:w-auto"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={save}
+                            disabled={saving || items.length === 0}
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#24170f] px-6 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 sm:w-auto"
+                        >
+                            {saving ? (
+                                <><Loader2 size={15} className="animate-spin" /> Saving…</>
+                            ) : (
+                                <>Save changes <ArrowRight size={15} /></>
+                            )}
+                        </button>
                     </div>
                 </div>
             </div>
-
-            {lightbox && (
-                <div className="fixed inset-0 z-[95] grid place-items-center bg-black/90 p-3 backdrop-blur-md sm:p-4" onMouseDown={() => setLightbox(null)}>
-                    <div onMouseDown={e => e.stopPropagation()} className="relative flex max-h-[95dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-[#24170f] shadow-2xl sm:rounded-3xl">
-                        <button onClick={() => setLightbox(null)} className="absolute right-3 top-3 z-10 grid h-10 w-10 place-items-center rounded-full bg-black/70 text-white transition hover:bg-black/90 sm:right-4 sm:top-4 sm:h-11 sm:w-11" title="Close (Esc)" aria-label="Close"><X size={20} className="sm:hidden" /><X size={22} className="hidden sm:block" /></button>
-                        <div className="grid min-h-0 flex-1 place-items-center overflow-auto bg-black/40 p-3 sm:p-4">
-                            <img src={lightbox.src} alt={lightbox.alt} className="max-h-[72dvh] w-auto max-w-full rounded-xl object-contain shadow-2xl sm:max-h-[80vh] sm:rounded-2xl" />
-                        </div>
-                        <div className="shrink-0 border-t border-white/10 bg-[#24170f] px-4 py-3 text-center sm:px-6 sm:py-4">
-                            <div className="text-[10px] uppercase tracking-[.2em] text-[#8a6d53] sm:tracking-[.24em]">Design</div>
-                            <div className="serif mt-1 truncate text-base font-semibold text-[#f1cf8a] sm:text-xl">{lightbox.alt}</div>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </>
-    );
-}
-
-function LiveTimer({ startedAt }) {
-    const [now, setNow] = useState(Date.now());
-    useEffect(() => {
-        const t = setInterval(() => setNow(Date.now()), 1000);
-        return () => clearInterval(t);
-    }, []);
-    const elapsed = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
-    const m = Math.floor(elapsed / 60);
-    const s = elapsed % 60;
-    return (
-        <div className="mt-3 flex items-center gap-3 rounded-2xl border border-[#f0d98c] bg-gradient-to-br from-[#fdf3d6] to-[#fff8e5] px-3 py-2.5 sm:px-4 sm:py-3">
-            <span className="relative flex h-2.5 w-2.5 shrink-0 sm:h-3 sm:w-3"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#8a6d1c] opacity-60" /><span className="relative inline-flex h-full w-full rounded-full bg-[#8a6d1c]" /></span>
-            <div className="min-w-0 flex-1">
-                <div className="text-[9px] uppercase tracking-[.18em] text-[#8a6d1c] sm:text-[10px] sm:tracking-[.2em]">Studio is working on your design</div>
-                <div className="serif mt-0.5 text-xl font-bold tabular-nums text-[#5b4636] sm:text-2xl">{String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}</div>
-            </div>
-            <Sparkles size={18} className="shrink-0 text-[#8a6d1c] sm:hidden" /><Sparkles size={20} className="hidden shrink-0 text-[#8a6d1c] sm:block" />
         </div>
     );
 }

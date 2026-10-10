@@ -21,8 +21,6 @@ const METHOD_OPTIONS = [
 ];
 
 export default function PaymentModal({ order, onClose, onPaid }) {
-    // If order came from cash/card but customer explicitly opened this modal
-    // to pay online, default to UPI tab
     const [method, setMethod] = useState(
         order.paymentMethod === "cash" || order.paymentMethod === "card"
             ? "upi"
@@ -36,6 +34,12 @@ export default function PaymentModal({ order, onClose, onPaid }) {
     const [copied, setCopied] = useState(false);
     const [utr, setUtr] = useState("");
 
+    // NEW: the amount the customer is being charged right now.
+    // If they already paid part of this order, we only charge the balance.
+    const totalDue = Number(order.total) || 0;
+    const paidAmount = Number(order.paidAmount) || 0;
+    const balanceDue = Number(order.balanceDue) || 0;
+    const amountDue = balanceDue > 0 ? balanceDue : totalDue;
 
     const loadQr = async () => {
         setLoading(true); setError("");
@@ -90,7 +94,6 @@ export default function PaymentModal({ order, onClose, onPaid }) {
     return (
         <div className="fixed inset-0 z-[80] flex items-end justify-center bg-[#20140e]/85 backdrop-blur-sm sm:items-center sm:p-4" onMouseDown={onClose}>
             <div onMouseDown={e => e.stopPropagation()} className="flex max-h-[94dvh] w-full max-w-md flex-col overflow-hidden rounded-t-[26px] bg-[#fffdf9] shadow-2xl sm:max-h-[92vh] sm:rounded-[28px]">
-                {/* Header */}
                 <div className="relative shrink-0 bg-[#24170f] p-5 text-[#f1cf8a] sm:p-6">
                     <button onClick={onClose} aria-label="Close payment" className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full text-[#f1cf8a] transition hover:bg-white/10 sm:right-4 sm:top-4 sm:h-10 sm:w-10">
                         <X size={18} />
@@ -112,7 +115,7 @@ export default function PaymentModal({ order, onClose, onPaid }) {
                             {method === "upi" ? (
                                 <>We received your UTR <strong className="break-all font-mono">{utr.trim()}</strong>. Studio will verify shortly.</>
                             ) : (
-                                <>Show this order at the counter. Pay <strong>{currency(order.total)}</strong> by <strong>{method === "cash" ? "cash" : "card"}</strong>.</>
+                                <>Show this order at the counter. Pay <strong>{currency(amountDue)}</strong> by <strong>{method === "cash" ? "cash" : "card"}</strong>.</>
                             )}
                         </p>
                         <div className="mt-4 rounded-xl bg-[#f5ecdf] px-4 py-3 text-[11px] text-[#5b4636]">
@@ -122,10 +125,17 @@ export default function PaymentModal({ order, onClose, onPaid }) {
                     </div>
                 ) : (
                     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6">
-                        {/* Amount */}
+                        {/* Amount — uses balance when there's a top-up */}
                         <div className="rounded-2xl bg-[#f5ecdf] p-4 text-center">
-                            <div className="text-[11px] uppercase tracking-[.15em] text-[#8a6d53] sm:text-xs">Amount to pay</div>
-                            <div className="serif mt-1 text-2xl font-bold text-[#24170f] sm:text-3xl">{currency(order.total)}</div>
+                            <div className="text-[11px] uppercase tracking-[.15em] text-[#8a6d53] sm:text-xs">
+                                {paidAmount > 0 && balanceDue > 0 ? "Balance to pay" : "Amount to pay"}
+                            </div>
+                            <div className="serif mt-1 text-2xl font-bold text-[#24170f] sm:text-3xl">{currency(amountDue)}</div>
+                            {paidAmount > 0 && balanceDue > 0 && (
+                                <div className="mt-1 text-[11px] text-[#8a6d53]">
+                                    Total {currency(totalDue)} · already paid {currency(paidAmount)}
+                                </div>
+                            )}
                         </div>
 
                         {/* Method tabs */}
@@ -150,7 +160,6 @@ export default function PaymentModal({ order, onClose, onPaid }) {
                             })}
                         </div>
 
-                        {/* UPI content */}
                         {method === "upi" && (
                             <>
                                 {loading ? (
@@ -211,7 +220,6 @@ export default function PaymentModal({ order, onClose, onPaid }) {
                             </>
                         )}
 
-                        {/* Card content */}
                         {method === "card" && (
                             <div className="mt-5 space-y-4">
                                 <div className="rounded-2xl border border-[#eadfce] bg-white p-4 text-sm text-[#5b4636]">
@@ -219,7 +227,11 @@ export default function PaymentModal({ order, onClose, onPaid }) {
                                         <CreditCard size={20} className="mt-0.5 shrink-0 text-[#7d3f24]" />
                                         <div>
                                             <div className="font-semibold text-[#24170f]">Pay by card at counter</div>
-                                            <p className="mt-1 text-xs">Show this order at the counter and pay <strong>{currency(order.total)}</strong> by card. The studio will mark your payment and assign your token.</p>
+                                            <p className="mt-1 text-xs">
+                                                Show this order at the counter and pay <strong>{currency(amountDue)}</strong> by card.
+                                                {paidAmount > 0 && balanceDue > 0 && <> You've already paid {currency(paidAmount)}; the remaining is {currency(balanceDue)}.</>}
+                                                {" "}The studio will mark your payment and assign your token.
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
@@ -230,7 +242,6 @@ export default function PaymentModal({ order, onClose, onPaid }) {
                             </div>
                         )}
 
-                        {/* Cash content */}
                         {method === "cash" && (
                             <div className="mt-5 space-y-4">
                                 <div className="rounded-2xl border border-[#eadfce] bg-white p-4 text-sm text-[#5b4636]">
@@ -238,7 +249,11 @@ export default function PaymentModal({ order, onClose, onPaid }) {
                                         <Banknote size={20} className="mt-0.5 shrink-0 text-[#7d3f24]" />
                                         <div>
                                             <div className="font-semibold text-[#24170f]">Pay by cash at counter</div>
-                                            <p className="mt-1 text-xs">Show this order at the counter and pay <strong>{currency(order.total)}</strong> in cash. The studio will mark your payment and assign your token.</p>
+                                            <p className="mt-1 text-xs">
+                                                Show this order at the counter and pay <strong>{currency(amountDue)}</strong> in cash.
+                                                {paidAmount > 0 && balanceDue > 0 && <> You've already paid {currency(paidAmount)}; the remaining is {currency(balanceDue)}.</>}
+                                                {" "}The studio will mark your payment and assign your token.
+                                            </p>
                                         </div>
                                     </div>
                                 </div>

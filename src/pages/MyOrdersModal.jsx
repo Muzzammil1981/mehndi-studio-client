@@ -120,9 +120,15 @@ export default function MyOrdersModal({ onClose, onPay, onModify }) {
                                     const isCounterPayment = ["cash", "card"].includes(o.paymentMethod);
                                     const payBadge = PAYMENT_BADGE[o.paymentMethod];
 
-                                    // BUG FIX: hide Modify for group orders (backend rejects it).
-                                    const canModify = !isCustom && !o.isGroup && ["pending", "approved", "awaiting-verification"].includes(o.status);
+                                    const canModify = !isCustom && !o.isGroup && ["pending", "approved", "awaiting-verification", "paid"].includes(o.status);
                                     const isResponding = responding === o.id;
+
+                                    // NEW: money fields
+                                    const totalDue = Number(o.total) || 0;
+                                    const paidAmount = Number(o.paidAmount) || 0;
+                                    const balanceDue = Number(o.balanceDue) || 0;
+                                    const refundDue = Number(o.refundDue) || 0;
+                                    const amountToPayNow = balanceDue > 0 ? balanceDue : totalDue;
 
                                     return (
                                         <div key={o.id} className={`rounded-2xl border bg-white p-3.5 sm:p-4 ${isCustom && (isCustomPending || isQuoteProposed) ? "border-2 border-[#f1cf8a]" : "border-[#eadfce]"}`}>
@@ -130,14 +136,12 @@ export default function MyOrdersModal({ onClose, onPay, onModify }) {
                                                 <div className="min-w-0">
                                                     <div className="truncate text-[10px] uppercase tracking-[.16em] text-[#8a6d53] sm:tracking-[.18em]">Order #{o.id.slice(0, 8)}</div>
 
-                                                    {/* Token badge (single order) */}
                                                     {o.tokenNumber && !o.isGroup && (
                                                         <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#f1cf8a]/30 border border-[#f1cf8a]/50 px-2.5 py-0.5 text-[11px] font-bold text-[#7d3f24]">
                                                             🎟️ {o.eventName ? `${o.eventName} - ` : ""}Token #{o.tokenNumber}
                                                         </div>
                                                     )}
 
-                                                    {/* Payment method badge */}
                                                     {payBadge && (
                                                         <span className={`ml-2 mt-1 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${payBadge.cls}`}>
                                                             {payBadge.label}
@@ -153,7 +157,6 @@ export default function MyOrdersModal({ onClose, onPay, onModify }) {
                                                 <span className={`inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold sm:text-xs ${S.cls}`}>{S.icon} {S.label}</span>
                                             </div>
 
-                                            {/* Group order — member tokens */}
                                             {/* Group order — member tokens with their designs */}
                                             {o.isGroup && o.members?.length > 0 && (
                                                 <div className="mt-3 rounded-2xl border border-[#f1cf8a] bg-[#fdf9ef] p-4">
@@ -189,7 +192,6 @@ export default function MyOrdersModal({ onClose, onPay, onModify }) {
                                                                         <span className="shrink-0 text-xs font-semibold text-[#7d3f24]">{currency(m.subtotal)}</span>
                                                                     </div>
 
-                                                                    {/* Member's assigned designs */}
                                                                     {memberItems.length > 0 && (
                                                                         <div className="mt-2 flex flex-wrap gap-1.5">
                                                                             {memberItems.map((it, idx) =>
@@ -212,7 +214,6 @@ export default function MyOrdersModal({ onClose, onPay, onModify }) {
                                                                         </div>
                                                                     )}
 
-                                                                    {/* Show the item names compactly */}
                                                                     {memberItems.length > 0 && !blurThumb && (
                                                                         <div className="mt-1.5 space-y-0.5 text-[10px] text-[#8a6d53]">
                                                                             {memberItems.map((it, idx) => (
@@ -342,13 +343,33 @@ export default function MyOrdersModal({ onClose, onPay, onModify }) {
                                                 </div>
                                             )}
 
-                                            {/* BUG FIX: hide standard items list for group orders (it's empty anyway) */}
+                                            {/* Items list — single orders only */}
                                             {!isCustom && !o.isGroup && (
                                                 <div className="mt-3 grid gap-1 border-t border-[#f0e6d8] pt-3 text-xs sm:mt-4 sm:text-sm">
                                                     {o.items.map((it, idx) => (
                                                         <div key={idx} className="flex justify-between gap-3 text-[#715e4e]"><span className="min-w-0 truncate">{it.qty}× {it.name}</span><span className="shrink-0">{currency(it.price * it.qty)}</span></div>
                                                     ))}
-                                                    <div className="mt-2 flex justify-between font-semibold"><span>Total</span><span>{currency(o.total)}</span></div>
+                                                    <div className="mt-2 flex justify-between font-semibold"><span>Total</span><span>{currency(totalDue)}</span></div>
+
+                                                    {/* NEW: show already-paid and balance */}
+                                                    {paidAmount > 0 && balanceDue > 0 && (
+                                                        <>
+                                                            <div className="flex justify-between text-[11px] text-[#1d7a3e]">
+                                                                <span>Already paid</span>
+                                                                <span>− {currency(paidAmount)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-[11px] font-bold text-[#7d3f24]">
+                                                                <span>Balance due</span>
+                                                                <span>{currency(balanceDue)}</span>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                    {refundDue > 0 && (
+                                                        <div className="flex justify-between text-[11px] font-bold text-[#9b3b2b]">
+                                                            <span>Refund due to you</span>
+                                                            <span>{currency(refundDue)}</span>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
 
@@ -371,7 +392,6 @@ export default function MyOrdersModal({ onClose, onPay, onModify }) {
                                                 </div>
                                             )}
 
-                                            {/* Modify design button — hidden for group orders */}
                                             {canModify && (
                                                 <button
                                                     onClick={() => onModify?.(o)}
@@ -381,7 +401,6 @@ export default function MyOrdersModal({ onClose, onPay, onModify }) {
                                                 </button>
                                             )}
 
-                                            {/* Counter-offer response buttons */}
                                             {isQuoteProposed && (
                                                 <div className="mt-4">
                                                     <div className="flex flex-col gap-2 sm:flex-row">
@@ -407,24 +426,27 @@ export default function MyOrdersModal({ onClose, onPay, onModify }) {
                                                 </div>
                                             )}
 
-                                            {/* UPI: Pay now */}
+                                            {/* UPI Pay now — shows only the OUTSTANDING balance */}
                                             {isApproved && !isCounterPayment && (
                                                 <button onClick={() => onPay(o)} className="mt-3 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-[#24170f] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5">
-                                                    <CreditCard size={15} /> Pay now {currency(o.total)}
+                                                    <CreditCard size={15} /> Pay now {currency(amountToPayNow)}
                                                 </button>
                                             )}
 
-                                            {/* Cash/Card: Pay at counter */}
+                                            {/* Cash/card at counter — shows balance */}
                                             {isApproved && isCounterPayment && (
                                                 <div className="mt-3 space-y-3">
                                                     <div className="flex items-start gap-3 rounded-2xl border border-[#f0d98c] bg-gradient-to-br from-[#fdf3d6] to-[#fff8e5] px-4 py-3">
                                                         <Wallet size={20} className="mt-0.5 shrink-0 text-[#8a6d1c]" />
                                                         <div className="min-w-0 flex-1">
                                                             <div className="text-sm font-bold text-[#8a6d1c]">
-                                                                Pay at counter by {o.paymentMethod === "cash" ? "cash" : "card"}
+                                                                Pay {currency(amountToPayNow)} at counter by {o.paymentMethod === "cash" ? "cash" : "card"}
                                                             </div>
                                                             <div className="mt-0.5 text-xs text-[#8a6d1c]/80">
-                                                                Show order <strong className="font-mono">#{o.id.slice(0, 8)}</strong> at the studio. {o.isGroup ? `Each of your ${o.members.length} members will get their own token after payment.` : "Your token will be assigned once payment is received."}
+                                                                Show order <strong className="font-mono">#{o.id.slice(0, 8)}</strong> at the studio.
+                                                                {paidAmount > 0
+                                                                    ? <> You've already paid <strong>{currency(paidAmount)}</strong>; the remaining balance is <strong>{currency(balanceDue)}</strong>.</>
+                                                                    : " Your token will be assigned once payment is received."}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -439,8 +461,9 @@ export default function MyOrdersModal({ onClose, onPay, onModify }) {
                                                 <div className="mt-4 flex items-center gap-2 rounded-full bg-[#e2f0e5] px-4 py-2 text-[11px] font-semibold text-[#1d7a3e] sm:text-xs">
                                                     <CheckCircle2 size={14} className="shrink-0" />
                                                     <span className="min-w-0 truncate">
-                                                        Payment received{o.paymentId ? ` · ${o.paymentId}` : ""}
-                                                        {o.isGroup ? ` · ${o.members.length} tokens assigned` : ""}
+                                                        {refundDue > 0
+                                                            ? `Paid ${currency(paidAmount)} · ${currency(refundDue)} refund will be issued by the studio`
+                                                            : <>Payment received{o.paymentId ? ` · ${o.paymentId}` : ""}{o.isGroup ? ` · ${o.members.length} tokens assigned` : ""}</>}
                                                     </span>
                                                 </div>
                                             )}
@@ -492,7 +515,6 @@ function LiveTimer({ startedAt }) {
     );
 }
 
-/* ---------- Compact inline timer for a group member ---------- */
 function MemberInlineTimer({ startedAt }) {
     const [now, setNow] = useState(Date.now());
     useEffect(() => {

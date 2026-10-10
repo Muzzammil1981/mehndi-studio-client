@@ -314,7 +314,7 @@ function PublicCatalog({ activeEvent }) {
         <BookingModal
           cart={selectedCartItems}
           total={selectedTotal}
-          activeEvent={activeEvent}         
+          activeEvent={activeEvent}
           onClose={() => setBookingOpen(false)}
           onSuccess={(order) => {
             const remaining = cart.filter(i => !selectedItems.has(i.id));
@@ -342,13 +342,23 @@ function PublicCatalog({ activeEvent }) {
       {modifyOrder && (
         <ModifyOrderModal
           order={modifyOrder}
+          activeEvent={activeEvent}
           onClose={() => setModifyOrder(null)}
           onSuccess={(updatedOrder) => {
             setModifyOrder(null);
-            if (updatedOrder.eventId && (updatedOrder.totalDifference || 0) > 0) {
+            const balance = Number(updatedOrder.balanceDue) || 0;
+            const refund = Number(updatedOrder.refundDue) || 0;
+
+            // Only route to PaymentModal when there's an outstanding balance to top up.
+            // Refund cases (refund > 0) or no-change edits just reopen the orders list.
+            if (updatedOrder.status === "approved" && balance > 0) {
               setPaymentOrder(updatedOrder);
             } else {
               setOrdersOpen(true);
+            }
+
+            if (refund > 0) {
+              console.info(`[modify] refund due: ${refund}`);
             }
           }}
         />

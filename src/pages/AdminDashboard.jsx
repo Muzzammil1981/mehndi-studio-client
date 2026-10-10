@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import {
     LogOut, Image as ImageIcon, Users, Bell, Plus, X, Upload, Loader2,
-    Calendar, Clock, CheckCircle2, XCircle, ShieldAlert, Play, Square, BarChart3, LayoutGrid, Trash2, QrCode, Search, Monitor,
-    Timer, Palette, Coins,
+    Calendar, Clock, CheckCircle2, XCircle, ShieldAlert, Play, Square,
+    BarChart3, LayoutGrid, Trash2, QrCode, Search, Monitor,
+    Timer, Palette, Coins, Megaphone,
 } from "lucide-react";
 import { io } from "socket.io-client";
 import GoogleDriveCard from "./GoogleDriveCard";
@@ -14,6 +15,7 @@ import ReportsPanel from "./ReportsPanel";
 import AdminDesigns from "./AdminDesigns";
 import { imageUrl, currency } from "../lib/format";
 import SafeImage from "../components/SafeImage";
+import AdvertisementsManager from "../components/AdvertisementsManager";
 
 const CATEGORY_OPTIONS = [
     { id: "arabic", name: "Arabic Mehndi" },
@@ -255,6 +257,7 @@ function EventsManager() {
     const [selectAll, setSelectAll] = useState(false);
     const [priceOverrides, setPriceOverrides] = useState({});
     const [monitorEvent, setMonitorEvent] = useState(null);
+    const [adsEvent, setAdsEvent] = useState(null);
 
     useEffect(() => {
         fetchEvents();
@@ -471,6 +474,9 @@ function EventsManager() {
                                     <button onClick={() => setMonitorEvent(e)} className="text-[#1d7a3e] p-3 hover:bg-[#e2f0e5] rounded-full transition" title="Monitor Display Link">
                                         <Monitor size={18} />
                                     </button>
+                                    <button onClick={() => setAdsEvent(e)} className="text-[#7d3f24] p-3 hover:bg-[#f4eadc] rounded-full transition" title="Manage Advertisements">
+                                        <Megaphone size={18} />
+                                    </button>
                                     <button onClick={() => deleteEvent(e.id)} className="text-red-500 p-3 hover:bg-red-50 rounded-full transition" title="Delete Event">
                                         <Trash2 size={18} />
                                     </button>
@@ -547,6 +553,14 @@ function EventsManager() {
                 </div>
             )}
 
+            {/* ADVERTISEMENTS MANAGER MODAL */}
+            {adsEvent && (
+                <AdvertisementsManager
+                    event={adsEvent}
+                    onClose={() => setAdsEvent(null)}
+                />
+            )}
+
             {/* DESIGN IMAGE PREVIEW MODAL */}
             {previewDesign && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center bg-[#20140e]/80 backdrop-blur-sm p-4" onMouseDown={() => setPreviewDesign(null)}>
@@ -606,7 +620,8 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
 
     const confirmPayment = async () => {
         const label = order.paymentMethod === "cash" ? "cash" : order.paymentMethod === "card" ? "card" : "UPI";
-        if (!confirm(`Confirm you received ${currency(order.total)} via ${label}?`)) return;
+        const amountDue = Number(order.balanceDue) > 0 ? Number(order.balanceDue) : Number(order.total);
+        if (!confirm(`Confirm you received ${currency(amountDue)} via ${label}?`)) return;
         setVerifyBusy(true); setErr("");
         try { await api.post(`/api/orders/${order.id}/confirm-payment`, {}); onRefresh?.(); }
         catch (e) { setErr(e.response?.data?.message || "Failed"); }
@@ -618,6 +633,20 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
         try { await api.post(`/api/orders/${order.id}/reject-payment`, { reason: rejectReason }); setRejectOpen(false); onRefresh?.(); }
         catch (e) { setErr(e.response?.data?.message || "Failed"); }
         finally { setVerifyBusy(false); }
+    };
+
+    const acknowledgeRefund = async () => {
+        const amount = Number(order.refundDue) || 0;
+        if (!confirm(`Mark ${currency(amount)} refund as given to ${order.username}?`)) return;
+        setVerifyBusy(true); setErr("");
+        try {
+            await api.post(`/api/orders/${order.id}/acknowledge-refund`, {});
+            onRefresh?.();
+        } catch (e) {
+            setErr(e.response?.data?.message || "Failed");
+        } finally {
+            setVerifyBusy(false);
+        }
     };
 
     const startWork = async () => {
@@ -655,7 +684,6 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
         <div className={`rounded-2xl border-2 bg-white p-4 sm:p-5 ${order.status === "awaiting-verification" ? "border-[#f0b950] shadow-[0_0_0_3px_rgba(240,185,80,0.15)]" : isCustom && ["custom-pending", "quote-proposed"].includes(order.status) ? "border-[#f1cf8a]" : "border-[#eadfce]"}`}>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-3">
                 <div className="min-w-0">
-                    {/* EVENT NAME CHIP — NEW: shows whenever order belongs to an event, even for group orders */}
                     <div className="flex flex-wrap items-center gap-2 truncate text-[10px] uppercase tracking-[.16em] text-[#8a6d53] sm:tracking-[.18em]">
                         <span>Order #{order.id.slice(0, 8)} · {order.username}</span>
                         {eventName && (
@@ -691,6 +719,40 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
                 </div>
                 <span className={`self-start whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-bold sm:text-xs ${STATUS.cls}`}>{STATUS.label}</span>
             </div>
+
+            {/* Money status — balance due / refund due */}
+            {(Number(order.balanceDue) > 0 || Number(order.refundDue) > 0) && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-bold">
+                    {Number(order.balanceDue) > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#fdf3d6] border border-[#f0b950] px-3 py-1 text-[#8a6d1c]">
+                            ⚠️ {currency(order.balanceDue)} balance due
+                            {Number(order.paidAmount) > 0 && (
+                                <span className="ml-1 font-normal text-[#8a6d53]">
+                                    (paid {currency(order.paidAmount)} of {currency(order.total)})
+                                </span>
+                            )}
+                        </span>
+                    )}
+                    {Number(order.refundDue) > 0 && (
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-[#f8e4df] border border-[#e6c4be] px-3 py-1 text-[#9b3b2b]">
+                                ↩︎ Refund {currency(order.refundDue)} to customer
+                                <span className="ml-1 font-normal text-[#8a6d53]">
+                                    (paid {currency(order.paidAmount)}, new total {currency(order.total)})
+                                </span>
+                            </span>
+                            <button
+                                onClick={acknowledgeRefund}
+                                disabled={verifyBusy}
+                                className="inline-flex items-center gap-1 rounded-full bg-[#9b3b2b] px-3 py-1 text-[11px] font-bold text-white hover:bg-[#7a2e22] disabled:opacity-60"
+                                title="Click once you've paid the customer back in cash / bank transfer"
+                            >
+                                <CheckCircle2 size={12} /> Refund given
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Group order — per-member controls */}
             {order.isGroup && (
@@ -802,7 +864,6 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
                     )}
                 </div>
             ) : order.isGroup ? (
-                /* Group order: show the combined design thumbnails across all members */
                 <div className="mt-3 flex flex-wrap gap-2">
                     {order.members.flatMap(m => m.items || []).map((it, idx) => (
                         <button key={idx} type="button" onClick={() => onViewImage?.(imageUrl(it.image), it.name)} className="h-16 w-14 cursor-zoom-in overflow-hidden rounded-xl border border-[#eadfce] bg-[#eadcc9] transition hover:ring-2 hover:ring-[#7d3f24] sm:h-20 sm:w-16" title={`View ${it.name}`}>
@@ -839,7 +900,6 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
                 </div>
             )}
 
-            {/* SINGLE-ORDER: start / end work (hidden for groups) */}
             {order.status === "paid" && !order.isGroup && (
                 <div className="mt-4">
                     <button onClick={startWork} disabled={verifyBusy} className="flex w-full items-center justify-center gap-2 rounded-full bg-[#7d3f24] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto">
@@ -877,7 +937,7 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
             {order.status === "approved" && ["cash", "card"].includes(order.paymentMethod) && (
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                     <button onClick={confirmPayment} disabled={verifyBusy} className="flex w-full items-center justify-center gap-2 rounded-full bg-[#1d7a3e] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto">
-                        <CheckCircle2 size={14} /> Payment received at counter
+                        <CheckCircle2 size={14} /> Payment received at counter{Number(order.balanceDue) > 0 ? ` · ${currency(order.balanceDue)}` : ""}
                     </button>
                     <button onClick={() => onAction({ order, mode: "reject" })} className="flex w-full items-center justify-center gap-2 rounded-full border border-[#e6c4be] bg-white px-5 py-2.5 text-sm font-semibold text-[#9b3b2b] sm:w-auto">
                         <XCircle size={14} /> Reject / No-show
@@ -912,7 +972,7 @@ function OrderCard({ order, eventName, onAction, onRefresh, onViewImage }) {
     );
 }
 
-/* ---------- Quote Custom Order Modal (accept / counter / reject) ---------- */
+/* ---------- Quote Custom Order Modal ---------- */
 function QuoteCustomOrderModal({ order, onClose, onDone }) {
     const [mode, setMode] = useState("accept");
     const [quotedPrice, setQuotedPrice] = useState(order.quotedPrice || "");
