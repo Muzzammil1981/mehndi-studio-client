@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+
 import {
     X, Loader2, Plus, Trash2, Play, Pause, Edit3, BarChart3,
-    ExternalLink, Upload, AlertCircle, CheckCircle2, Eye,
+    Upload, AlertCircle, CheckCircle2, Eye, RefreshCw,
 } from "lucide-react";
+
 import { api } from "../lib/api";
 import { toEmbedUrl } from "../lib/adEmbed";
 import { currency } from "../lib/format";
@@ -17,18 +19,56 @@ export default function AdvertisementsManager({ event, onClose }) {
     const [ads, setAds] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const [editing, setEditing] = useState(null); // null | "new" | campaign object
+    const [editing, setEditing] = useState(null);
     const [reportAd, setReportAd] = useState(null);
 
-    const load = () => {
-        setLoading(true); setError("");
-        api.get(`/api/ads?eventId=${event.id}&t=${Date.now()}`)
-            .then(({ data }) => setAds(Array.isArray(data) ? data : []))
-            .catch(err => setError(err.response?.data?.message || "Could not load ads"))
-            .finally(() => setLoading(false));
+
+
+    const [refreshing, setRefreshing] = useState(false);
+
+    const load = async (showLoader = true) => {
+        if (showLoader) setLoading(true);
+        setError("");
+
+        try {
+            const { data } = await api.get(
+                `/api/ads?eventId=${event.id}&t=${Date.now()}`
+            );
+            setAds(Array.isArray(data) ? data : []);
+        } catch (err) {
+            setError(
+                err.response?.data?.message || "Could not load ads"
+            );
+        } finally {
+            if (showLoader) setLoading(false);
+        }
     };
 
-    useEffect(() => { load(); }, [event.id]);
+    const refreshAds = async () => {
+        if (refreshing) return;
+
+        setRefreshing(true);
+        try {
+            await load(false);
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
+    useEffect(() => {
+        load();
+    }, [event.id]);
+
+
+    // const load = () => {
+    //     setLoading(true); setError("");
+    //     api.get(`/api/ads?eventId=${event.id}&t=${Date.now()}`)
+    //         .then(({ data }) => setAds(Array.isArray(data) ? data : []))
+    //         .catch(err => setError(err.response?.data?.message || "Could not load ads"))
+    //         .finally(() => setLoading(false));
+    // };
+
+    // useEffect(() => { load(); }, [event.id]);
 
     const toggleActive = async (ad) => {
         try {
@@ -61,11 +101,29 @@ export default function AdvertisementsManager({ event, onClose }) {
                             className="inline-flex items-center gap-1.5 rounded-full bg-[#24170f] px-4 py-2 text-xs font-semibold text-white hover:bg-[#382419]">
                             <Plus size={14} /> Add campaign
                         </button>
+                        <button
+                            type="button"
+                            onClick={refreshAds}
+                            disabled={refreshing}
+                            title="Refresh campaigns"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-[#ded0bc] bg-white px-3 py-2 text-xs font-semibold text-[#5b4636] hover:bg-[#f4eadc] disabled:opacity-60"
+                        >
+                            <RefreshCw
+                                size={14}
+                                className={refreshing ? "animate-spin" : ""}
+                            />
+                            <span>
+                                {refreshing ? "Refreshing..." : "Refresh"}
+                            </span>
+                        </button>
                         <button onClick={onClose}
                             className="grid h-10 w-10 place-items-center rounded-full hover:bg-[#f1e6d8]">
                             <X size={18} />
                         </button>
                     </div>
+
+
+
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
@@ -119,7 +177,6 @@ export default function AdvertisementsManager({ event, onClose }) {
                                         </div>
                                     </div>
 
-                                    {/* Plays progress */}
                                     <div className="mt-3 grid gap-2 rounded-xl bg-[#faf5ed] p-3">
                                         {ad.videos.map(v => {
                                             const delivered = v.deliveredPlays;
@@ -151,12 +208,13 @@ export default function AdvertisementsManager({ event, onClose }) {
                                             className="inline-flex items-center gap-1 rounded-full border border-[#ded0bc] bg-white px-3 py-1.5 text-xs font-semibold text-[#5b4636] hover:bg-[#f4eadc]">
                                             {ad.active ? <><Pause size={12} /> Pause</> : <><Play size={12} /> Resume</>}
                                         </button>
-                                        {ad.videos[0] && (
-                                            <a href={ad.videos[0].embedUrl} target="_blank" rel="noreferrer"
-                                                className="inline-flex items-center gap-1 rounded-full border border-[#ded0bc] bg-white px-3 py-1.5 text-xs font-semibold text-[#5b4636] hover:bg-[#f4eadc]">
-                                                <Eye size={12} /> Preview
+                                        {ad.videos.map((v, i) => (
+                                            <a key={v.id || i} href={v.url} target="_blank" rel="noreferrer"
+                                                className="inline-flex items-center gap-1 rounded-full border border-[#ded0bc] bg-white px-3 py-1.5 text-xs font-semibold text-[#5b4636] hover:bg-[#f4eadc]"
+                                                title={v.title}>
+                                                <Eye size={12} /> Preview{ad.videos.length > 1 ? ` ${i + 1}` : ""}
                                             </a>
-                                        )}
+                                        ))}
                                         <button onClick={() => removeAd(ad)}
                                             className="ml-auto inline-flex items-center gap-1 rounded-full border border-[#e6c4be] bg-white px-3 py-1.5 text-xs font-semibold text-[#9b3b2b] hover:bg-[#fdf2ef]">
                                             <Trash2 size={12} /> Delete
@@ -232,7 +290,6 @@ function AdEditModal({ eventId, existing, onClose, onSaved }) {
         e.preventDefault();
         setError("");
 
-        // Validate and enrich videos
         const enriched = [];
         for (let i = 0; i < form.videos.length; i++) {
             const v = form.videos[i];
@@ -304,7 +361,6 @@ function AdEditModal({ eventId, existing, onClose, onSaved }) {
                             className="rounded-xl border border-[#ddcdb8] bg-white px-3 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-[#b07a4f]" />
                     </label>
 
-                    {/* Play mode */}
                     <div>
                         <div className="mb-2 text-xs font-semibold text-[#5b4636]">When should this campaign play?</div>
                         <div className="space-y-2">
@@ -350,7 +406,6 @@ function AdEditModal({ eventId, existing, onClose, onSaved }) {
                         </label>
                     </div>
 
-                    {/* Videos playlist */}
                     <div>
                         <div className="mb-2 flex items-center justify-between">
                             <div className="text-xs font-semibold text-[#5b4636]">Videos ({form.videos.length})</div>
@@ -431,7 +486,7 @@ function AdEditModal({ eventId, existing, onClose, onSaved }) {
 }
 
 /* ============================================================
-   Runs log modal
+   Runs log modal — now shows the video name column
    ============================================================ */
 function AdReportModal({ ad, onClose }) {
     const [report, setReport] = useState(null);
@@ -445,11 +500,20 @@ function AdReportModal({ ad, onClose }) {
             .finally(() => setLoading(false));
     }, [ad.id]);
 
+    // Look up a video title for a run. Prefer the title frozen on the run
+    // record; fall back to the campaign's current videos by videoId.
+    const titleForRun = (r) => {
+        if (r.videoTitle) return r.videoTitle;
+        const v = ad.videos?.find(x => x.id === r.videoId);
+        return v?.title || "—";
+    };
+
     const downloadCsv = () => {
         if (!report) return;
         const rows = [
-            ["Started", "Ended", "Duration (s)", "Completed", "Rejected"],
+            ["Video", "Started", "Ended", "Duration (s)", "Completed", "Rejected"],
             ...report.runs.map(r => [
+                titleForRun(r),
                 r.startedAt,
                 r.endedAt || "",
                 r.durationSeconds || 0,
@@ -457,7 +521,7 @@ function AdReportModal({ ad, onClose }) {
                 r.rejected ? "yes" : "no",
             ]),
         ];
-        const csv = rows.map(r => r.map(x => `"${x}"`).join(",")).join("\n");
+        const csv = rows.map(row => row.map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
         const blob = new Blob([csv], { type: "text/csv" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -470,7 +534,7 @@ function AdReportModal({ ad, onClose }) {
     return (
         <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4" onMouseDown={onClose}>
             <div onMouseDown={e => e.stopPropagation()}
-                className="flex max-h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[26px] bg-[#fffdf9] shadow-2xl sm:rounded-[28px]">
+                className="flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[26px] bg-[#fffdf9] shadow-2xl sm:rounded-[28px]">
                 <div className="flex shrink-0 items-center justify-between border-b border-[#eadfce] px-5 py-4">
                     <div className="min-w-0">
                         <div className="text-[10px] uppercase tracking-widest text-[#8a6d53]">Runs log</div>
@@ -507,6 +571,7 @@ function AdReportModal({ ad, onClose }) {
                                     <table className="w-full text-xs">
                                         <thead className="bg-[#faf5ed] text-left text-[10px] uppercase tracking-wider text-[#8a6d53]">
                                             <tr>
+                                                <th className="px-3 py-2">Video</th>
                                                 <th className="px-3 py-2">Started</th>
                                                 <th className="px-3 py-2">Duration</th>
                                                 <th className="px-3 py-2">Status</th>
@@ -515,6 +580,9 @@ function AdReportModal({ ad, onClose }) {
                                         <tbody>
                                             {report.runs.map(r => (
                                                 <tr key={r.id} className="border-t border-[#f0e6d8]">
+                                                    <td className="px-3 py-2">
+                                                        <span className="font-semibold text-[#7d3f24]">{titleForRun(r)}</span>
+                                                    </td>
                                                     <td className="px-3 py-2 font-mono text-[11px]">{new Date(r.startedAt).toLocaleString()}</td>
                                                     <td className="px-3 py-2 tabular-nums">{r.durationSeconds}s</td>
                                                     <td className="px-3 py-2">
