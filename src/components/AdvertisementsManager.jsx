@@ -9,11 +9,37 @@ import { api } from "../lib/api";
 import { toEmbedUrl } from "../lib/adEmbed";
 import { currency } from "../lib/format";
 
+
 const PLAY_MODES = [
-    { id: "no-session", label: "No session in progress", hint: "Play ads whenever the studio is idle. Ads chain back-to-back." },
-    { id: "interval", label: "Interval", hint: "Global throttle — at most one ad every N minutes, only when idle." },
-    { id: "no-session-and-interval", label: "No session + Interval", hint: "This campaign can play once every N minutes when idle." },
+    {
+        id: "no-session",
+        label: "1. Only when the studio is idle",
+        hint: "Never interrupt a customer session.",
+        detail:
+            "When the studio becomes idle, ads can play back-to-back. No interval is applied.",
+        example:
+            "Example: Ad A finishes → Ad B can play immediately.",
+    },
+    {
+        id: "interval",
+        label: "2. Every N minutes — including during sessions",
+        hint: "Can interrupt a customer session.",
+        detail:
+            "The interval is shared globally by campaigns using this mode. At most one eligible ad is triggered per interval.",
+        example:
+            "Example: With a 20-minute interval, an eligible ad can be triggered after the interval, even during a session.",
+    },
+    {
+        id: "no-session-and-interval",
+        label: "3. Only when idle + every N minutes",
+        hint: "Never interrupt a customer session.",
+        detail:
+            "This campaign has its own interval. It becomes eligible after N minutes but waits until the studio is idle.",
+        example:
+            "Example: If the interval expires during a session, the ad waits until the studio becomes idle.",
+    },
 ];
+
 
 export default function AdvertisementsManager({ event, onClose }) {
     const [ads, setAds] = useState([]);
@@ -59,16 +85,6 @@ export default function AdvertisementsManager({ event, onClose }) {
         load();
     }, [event.id]);
 
-
-    // const load = () => {
-    //     setLoading(true); setError("");
-    //     api.get(`/api/ads?eventId=${event.id}&t=${Date.now()}`)
-    //         .then(({ data }) => setAds(Array.isArray(data) ? data : []))
-    //         .catch(err => setError(err.response?.data?.message || "Could not load ads"))
-    //         .finally(() => setLoading(false));
-    // };
-
-    // useEffect(() => { load(); }, [event.id]);
 
     const toggleActive = async (ad) => {
         try {
@@ -121,9 +137,6 @@ export default function AdvertisementsManager({ event, onClose }) {
                             <X size={18} />
                         </button>
                     </div>
-
-
-
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
@@ -173,22 +186,27 @@ export default function AdvertisementsManager({ event, onClose }) {
                                         </div>
                                         <div className="text-right">
                                             <div className="text-lg font-bold text-[#7d3f24]">{currency(ad.costPerPlay)}<span className="text-xs text-[#8a6d53]">/play</span></div>
-                                            <div className="text-[11px] text-[#8a6d53]">Total: {currency(ad.totalCost)}</div>
+                                            <div className="text-[11px] text-[#8a6d53]">
+                                                Total: {ad.totalCost === "N" ? "Unlimited" : currency(ad.totalCost)}
+                                            </div>
                                         </div>
                                     </div>
 
                                     <div className="mt-3 grid gap-2 rounded-xl bg-[#faf5ed] p-3">
                                         {ad.videos.map(v => {
+                                            const isUnlimited = v.purchasedPlays === "N" || v.purchasedPlays === null;
                                             const delivered = v.deliveredPlays;
-                                            const pct = v.purchasedPlays > 0 ? Math.min(100, Math.round((delivered / v.purchasedPlays) * 100)) : 0;
+                                            const pct = isUnlimited ? 100 : v.purchasedPlays > 0 ? Math.min(100, Math.round((delivered / v.purchasedPlays) * 100)) : 0;
                                             return (
                                                 <div key={v.id}>
                                                     <div className="flex justify-between text-[11px]">
                                                         <span className="truncate text-[#5b4636]">{v.title} · {v.durationSeconds}s</span>
-                                                        <span className="ml-2 shrink-0 font-bold text-[#7d3f24]">{delivered} / {v.purchasedPlays}</span>
+                                                        <span className="ml-2 shrink-0 font-bold text-[#7d3f24]">
+                                                            {delivered} / {isUnlimited ? "∞" : v.purchasedPlays}
+                                                        </span>
                                                     </div>
-                                                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#eadfce]">
-                                                        <div className="h-full rounded-full bg-[#7d3f24] transition-all" style={{ width: `${pct}%` }} />
+                                                    <div className={`mt-1 h-1.5 w-full overflow-hidden rounded-full ${isUnlimited ? "bg-[#e2f0e5]" : "bg-[#eadfce]"}`}>
+                                                        <div className={`h-full rounded-full transition-all ${isUnlimited ? "bg-[#1d7a3e]/40 w-full" : "bg-[#7d3f24]"}`} style={!isUnlimited ? { width: `${pct}%` } : {}} />
                                                     </div>
                                                 </div>
                                             );
@@ -262,8 +280,9 @@ function AdEditModal({ eventId, existing, onClose, onSaved }) {
             url: v.url,
             title: v.title,
             durationSeconds: v.durationSeconds,
-            purchasedPlays: v.purchasedPlays,
-        })) || [{ url: "", title: "", durationSeconds: 30, purchasedPlays: 5 }],
+            purchasedPlays: v.purchasedPlays === "N" ? "" : v.purchasedPlays,
+            isUnlimited: v.purchasedPlays === "N"
+        })) || [{ url: "", title: "", durationSeconds: 30, purchasedPlays: 5, isUnlimited: false }],
     }));
 
     const [busy, setBusy] = useState(false);
@@ -272,13 +291,22 @@ function AdEditModal({ eventId, existing, onClose, onSaved }) {
     const updateVideo = (idx, patch) => {
         setForm(f => ({
             ...f,
-            videos: f.videos.map((v, i) => i === idx ? { ...v, ...patch } : v),
+            videos: f.videos.map((v, i) => {
+                if (i === idx) {
+                    const updated = { ...v, ...patch };
+                    if (patch.isUnlimited !== undefined) {
+                        updated.purchasedPlays = patch.isUnlimited ? "N" : (v.purchasedPlays === "N" ? 5 : v.purchasedPlays);
+                    }
+                    return updated;
+                }
+                return v;
+            })
         }));
     };
 
     const addVideo = () => setForm(f => ({
         ...f,
-        videos: [...f.videos, { url: "", title: "", durationSeconds: 30, purchasedPlays: 5 }],
+        videos: [...f.videos, { url: "", title: "", durationSeconds: 30, purchasedPlays: 5, isUnlimited: false }],
     }));
 
     const removeVideo = (idx) => setForm(f => ({
@@ -298,8 +326,18 @@ function AdEditModal({ eventId, existing, onClose, onSaved }) {
             if (!embedUrl) return setError(`Video ${i + 1}: could not detect embed URL`);
             if (!v.title?.trim()) return setError(`Video ${i + 1}: title is required`);
             if (!v.durationSeconds || v.durationSeconds < 5) return setError(`Video ${i + 1}: duration must be ≥ 5 seconds`);
-            if (!v.purchasedPlays || v.purchasedPlays < 1) return setError(`Video ${i + 1}: purchased plays must be ≥ 1`);
-            enriched.push({ ...v, embedUrl, source });
+
+            const isUnlimited = v.isUnlimited || v.purchasedPlays === "N";
+            if (!isUnlimited && (!v.purchasedPlays || Number(v.purchasedPlays) < 1)) {
+                return setError(`Video ${i + 1}: purchased plays must be ≥ 1`);
+            }
+
+            enriched.push({
+                ...v,
+                purchasedPlays: isUnlimited ? "N" : Number(v.purchasedPlays),
+                embedUrl,
+                source
+            });
         }
 
         setBusy(true);
@@ -371,9 +409,11 @@ function AdEditModal({ eventId, existing, onClose, onSaved }) {
                                         checked={form.playMode === m.id}
                                         onChange={e => setForm({ ...form, playMode: e.target.value })}
                                         className="mt-1 accent-[#7d3f24]" />
-                                    <div>
+                                    <div className="flex-1">
                                         <div className="text-sm font-semibold">{m.label}</div>
-                                        <div className="text-[11px] text-[#8a6d53]">{m.hint}</div>
+                                        <div className="text-[11px] font-medium text-[#8a6d53]">{m.hint}</div>
+                                        <p className="mt-1.5 text-[11px] text-[#5b4636] leading-relaxed">{m.detail}</p>
+                                        <p className="mt-1 text-[11px] italic text-[#a17e63]">{m.example}</p>
                                     </div>
                                 </label>
                             ))}
@@ -455,10 +495,18 @@ function AdEditModal({ eventId, existing, onClose, onSaved }) {
                                             </label>
                                             <label className="grid gap-1 text-[11px] font-semibold text-[#5b4636]">
                                                 Plays bought *
-                                                <input required type="number" min="1"
-                                                    value={v.purchasedPlays}
-                                                    onChange={e => updateVideo(idx, { purchasedPlays: e.target.value })}
-                                                    className="rounded-lg border border-[#ddcdb8] bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-[#b07a4f]" />
+                                                <div className="flex items-center gap-2">
+                                                    <input required={!v.isUnlimited} type="number" min="1" disabled={v.isUnlimited}
+                                                        value={v.isUnlimited ? "" : v.purchasedPlays}
+                                                        onChange={e => updateVideo(idx, { purchasedPlays: e.target.value })}
+                                                        className="w-full rounded-lg border border-[#ddcdb8] bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-[#b07a4f] disabled:bg-[#f4eadc] disabled:text-[#a17e63]" />
+                                                    <label className="flex shrink-0 items-center gap-1 text-[10px] text-[#8a6d53] font-normal cursor-pointer">
+                                                        <input type="checkbox" checked={!!v.isUnlimited}
+                                                            onChange={e => updateVideo(idx, { isUnlimited: e.target.checked, purchasedPlays: e.target.checked ? "N" : 5 })}
+                                                            className="accent-[#7d3f24]" />
+                                                        ∞ (Unlimited)
+                                                    </label>
+                                                </div>
                                             </label>
                                         </div>
                                     </div>

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Sparkles, Clock, Wifi, WifiOff, CheckCircle2, Users, Ticket, Timer, Maximize, Minimize, Palette } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Sparkles, Clock, Wifi, WifiOff, CheckCircle2, Users, Ticket, Timer, Maximize, Minimize, Palette, Volume2, VolumeX } from "lucide-react";
 import { api, API_BASE } from "../lib/api";
 import AdPlayer from "../components/AdPlayer";
+import useAdScheduler from "../hooks/useAdScheduler";
 
 const BASE_SECONDS = 30 * 60;
 const EXTEND_SECONDS = 10 * 60;
@@ -256,39 +257,55 @@ export default function MonitorPage({ eventId }) {
     const [connected, setConnected] = useState(true);
     const [now, setNow] = useState(new Date());
 
+    /* ---------- Clock ---------- */
+    useEffect(() => {
+        const t = setInterval(() => setNow(new Date()), 1000);
+        return () => clearInterval(t);
+    }, []);
+
+    /* ---------- Screen Wake Lock ---------- */
+    useEffect(() => {
+        let wakeLock = null;
+        let cancelled = false;
+        const requestWakeLock = async () => {
+            try {
+                if ("wakeLock" in navigator) {
+                    const lock = await navigator.wakeLock.request("screen");
+                    if (cancelled) { lock.release().catch(() => { }); return; }
+                    wakeLock = lock;
+                }
+            } catch (err) {
+                console.warn("Wake Lock failed:", err.message);
+            }
+        };
+        requestWakeLock();
+        const onVisible = () => { if (document.visibilityState === "visible") requestWakeLock(); };
+        document.addEventListener("visibilitychange", onVisible);
+        return () => {
+            cancelled = true;
+            document.removeEventListener("visibilitychange", onVisible);
+            wakeLock?.release?.().catch(() => { });
+        };
+    }, []);
+
     /* ---------- Sound ---------- */
     const [soundEnabled, setSoundEnabled] = useState(() => {
         try { return localStorage.getItem("mehndi-monitor-sound") === "on"; }
         catch { return false; }
     });
-    const enableSound = () => {
-        setSoundEnabled(true);
-        try { localStorage.setItem("mehndi-monitor-sound", "on"); } catch { /* silent */ }
-    };
+    const [soundBlocked, setSoundBlocked] = useState(false);
+    const effectiveSound = soundEnabled && !soundBlocked;
+
     const toggleSound = () => {
-        setSoundEnabled(prev => {
+        if (soundBlocked) { setSoundBlocked(false); return; }
+        setSoundEnabled((prev) => {
             const next = !prev;
             try { localStorage.setItem("mehndi-monitor-sound", next ? "on" : "off"); } catch { /* silent */ }
             return next;
         });
     };
 
-    /* ---------- Ads ---------- */
-    const [ads, setAds] = useState([]);
-    const [playingAd, setPlayingAd] = useState(null);
-    const [lastPlayAt, setLastPlayAt] = useState({});
-    const lastGlobalAdAt = useRef(0);
-    const lastEvalRef = useRef(0);
-    const playingAdRef = useRef(null);
-
-    useEffect(() => {
-        const t = setInterval(() => setNow(new Date()), 1000);
-        return () => clearInterval(t);
-    }, []);
-
-    useEffect(() => { playingAdRef.current = playingAd; }, [playingAd]);
-
-    /* Fullscreen */
+    /* ---------- Fullscreen ---------- */
     const [isFullscreen, setIsFullscreen] = useState(false);
     const toggleFullscreen = () => {
         if (document.fullscreenElement) document.exitFullscreen?.();
@@ -327,111 +344,24 @@ export default function MonitorPage({ eventId }) {
         return () => { cancelled = true; clearInterval(t); };
     }, [eventId]);
 
-    /* ---------- Ads polling ---------- */
-    useEffect(() => {
-        if (!eventId) return;
-        let cancelled = false;
-        const fetchAds = async () => {
-            try {
-                const { data } = await api.get(`/api/ads/active?eventId=${eventId}`);
-                if (!cancelled) setAds(Array.isArray(data) ? data : []);
-            } catch { /* silent */ }
-        };
-        fetchAds();
-        const t = setInterval(fetchAds, 30_000);
-        return () => { cancelled = true; clearInterval(t); };
-    }, [eventId]);
-
     const sessions = data?.nowServing || [];
     const hasSession = sessions.length > 0;
 
-    /* ---------- End an ad ---------- */
-    const endPlayingAd = useCallback((completed) => {
-        const ad = playingAdRef.current;
-        if (!ad) return;
-        api.post(`/api/ads/${ad.campaign.id}/run-end`, { runId: ad.runId, completed })
-            .catch(() => { /* silent */ });
-        setPlayingAd(null);
-    }, []);
+    /* ---------- Ads ---------- */
+    const { playingAd, markStarted, endPlayingAd } = useAdScheduler({ eventId, hasSession });
 
-    /* ---------- Ad evaluation loop ---------- */
+    /* ---------- FORCE AD TO END AT EXACTLY 60 SECONDS ---------- */
+    // This effect runs every second (because `now` updates). If the admin set the
+    // duration to 60s, this will force the ad to end at exactly 60s, even if the
+    // YouTube video is 5 minutes long.
     useEffect(() => {
-        const t = now.getTime();
-        if (t - lastEvalRef.current < 4000) return;
-        lastEvalRef.current = t;
-
-        if (playingAd && hasSession) {
-            const mode = playingAd.campaign.playMode;
-            if (mode === "no-session" || mode === "no-session-and-interval") {
-                endPlayingAd(false);
-            }
-            return;
+        if (!playingAd || !playingAd.started) return;
+        const elapsedMs = now.getTime() - playingAd.startedAt;
+        const totalMs = (playingAd.durationSeconds || 30) * 1000;
+        if (elapsedMs >= totalMs) {
+            endPlayingAd(true);
         }
-
-        if (playingAd) return;
-        if (!ads.length) return;
-
-        const nowMs = Date.now();
-        const eligible = ads.filter(a => {
-            if (!a.active || a.exhausted) return false;
-            const intervalMs = (a.intervalMinutes || 0) * 60 * 1000;
-            const ownLast = lastPlayAt[a.id] || 0;
-
-            if (a.playMode === "no-session") return !hasSession;
-            if (a.playMode === "interval") return nowMs - lastGlobalAdAt.current >= intervalMs;
-            if (a.playMode === "no-session-and-interval") return !hasSession && (nowMs - ownLast >= intervalMs);
-            return false;
-        });
-        if (!eligible.length) return;
-
-        eligible.sort((a, b) => (lastPlayAt[a.id] || 0) - (lastPlayAt[b.id] || 0));
-        const campaign = eligible[0];
-
-        const eligibleVideos = campaign.videos.filter(
-            v => (v.playsCompleted + v.playsInterrupted) < v.purchasedPlays
-        );
-        if (!eligibleVideos.length) return;
-        eligibleVideos.sort((a, b) =>
-            (a.playsCompleted + a.playsInterrupted) - (b.playsCompleted + b.playsInterrupted)
-        );
-        const video = eligibleVideos[0];
-
-        api.post(`/api/ads/${campaign.id}/run-start`, { videoId: video.id })
-            .then(({ data: run }) => {
-                setPlayingAd({
-                    campaign,
-                    video: { ...video, embedUrl: video.embedUrl || video.url },
-                    runId: run.runId,
-                    startedAt: Date.now(),
-                    durationSeconds: Number(video.durationSeconds) || 30,
-                });
-                const ts = Date.now();
-                setLastPlayAt(prev => ({ ...prev, [campaign.id]: ts }));
-                lastGlobalAdAt.current = ts;
-            })
-            .catch(() => { /* silent */ });
-    }, [now, hasSession, ads, playingAd, lastPlayAt, endPlayingAd]);
-
-    /* ---------- Sound gate ---------- */
-    const soundGate = !soundEnabled ? (
-        <div className="fixed inset-0 z-[300] grid place-items-center bg-black/95 backdrop-blur">
-            <div className="max-w-md px-6 text-center">
-                <div className="mx-auto mb-6 grid h-24 w-24 place-items-center rounded-full bg-[#f1cf8a]/20 ring-2 ring-[#f1cf8a]/40">
-                    <Sparkles size={44} className="text-[#f1cf8a]" />
-                </div>
-                <h2 className="serif text-3xl md:text-4xl font-bold text-white mb-3">Tap to enable sound</h2>
-                <p className="text-[#d9c9b8] mb-8 text-sm md:text-base leading-6">
-                    Browsers block audio on pages until you interact once. Tap the button below and ads will play with full sound. This is remembered on this device.
-                </p>
-                <button
-                    onClick={enableSound}
-                    className="rounded-full bg-[#f1cf8a] text-[#24170f] px-10 py-4 text-lg font-bold shadow-lg transition hover:-translate-y-0.5"
-                >
-                    Enable sound
-                </button>
-            </div>
-        </div>
-    ) : null;
+    }, [now, playingAd, endPlayingAd]);
 
     /* ---------- Early returns ---------- */
     if (!eventId) {
@@ -448,94 +378,115 @@ export default function MonitorPage({ eventId }) {
         );
     }
 
-    if (!data && !error) {
+    if (!data) {
         return (
-            <div className="min-h-screen bg-[#120a06] grid place-items-center">
-                <div className="flex flex-col items-center gap-4">
-                    <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#f1cf8a]/20 border-t-[#f1cf8a]" />
-                    <div className="serif text-2xl text-[#f1cf8a]">Loading queue…</div>
+            <div className="min-h-screen bg-[#120a06] grid place-items-center px-5">
+                <div className="flex flex-col items-center gap-4 text-center">
+                    {error ? (
+                        <>
+                            <WifiOff size={44} className="text-red-400" />
+                            <div className="serif text-2xl text-red-300">{error}</div>
+                            <div className="text-sm text-[#a88b6f]">Retrying every 8 seconds…</div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#f1cf8a]/20 border-t-[#f1cf8a]" />
+                            <div className="serif text-2xl text-[#f1cf8a]">Loading queue…</div>
+                        </>
+                    )}
                 </div>
             </div>
         );
     }
 
+    const upNext = data.upNext || [];
+    const recentlyCompleted = data.recentlyCompleted || [];
+
     /* ---------- Ad view with countdown ---------- */
     if (playingAd) {
-        const elapsedMs = now.getTime() - (playingAd.startedAt || now.getTime());
-        const adRemaining = Math.max(
-            0,
-            Math.ceil((playingAd.durationSeconds || 30) - elapsedMs / 1000)
-        );
+        const total = playingAd.durationSeconds || 30;
+        const adRemaining = playingAd.started
+            ? Math.max(0, Math.ceil(total - (now.getTime() - playingAd.startedAt) / 1000))
+            : total;
 
         return (
-            <>
-                {soundGate}
-                <div className="fixed inset-0 bg-black text-white">
-                    <AdPlayer
-                        video={playingAd.video}
-                        soundEnabled={soundEnabled}
-                        onEnded={(c) => endPlayingAd(c)}
-                    />
+            <div className="fixed inset-0 bg-black text-white">
+                <AdPlayer
+                    key={playingAd.runId}
+                    video={playingAd.video}
+                    soundEnabled={effectiveSound}
+                    onStarted={markStarted}
+                    onEnded={endPlayingAd}
+                    onSoundBlocked={() => setSoundBlocked(true)}
+                />
 
-                    {/* Top-right countdown */}
-                    <div className="absolute right-6 top-6 md:right-10 md:top-10 z-20">
-                        <div className="relative grid h-24 w-24 md:h-32 md:w-32 place-items-center rounded-full border-4 border-[#f1cf8a]/40 bg-black/70 backdrop-blur-md shadow-[0_0_40px_rgba(241,207,138,0.35)]">
-                            {/* Progress ring drawn as SVG */}
-                            <svg className="absolute inset-0 -rotate-90" viewBox="0 0 100 100">
-                                <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
-                                <circle
-                                    cx="50" cy="50" r="44"
-                                    fill="none"
-                                    stroke="#f1cf8a"
-                                    strokeWidth="4"
-                                    strokeLinecap="round"
-                                    strokeDasharray={`${2 * Math.PI * 44}`}
-                                    strokeDashoffset={`${2 * Math.PI * 44 * (1 - adRemaining / (playingAd.durationSeconds || 30))}`}
-                                    style={{ transition: "stroke-dashoffset 1s linear" }}
-                                />
-                            </svg>
-                            <div className="text-center">
-                                <div className="serif text-4xl md:text-6xl font-bold text-[#f1cf8a] tabular-nums leading-none">
-                                    {adRemaining}
-                                </div>
-                                <div className="mt-1 text-[9px] md:text-[10px] uppercase tracking-[.24em] text-[#a88b6f]">
-                                    sec
-                                </div>
+                {/* Floating Sound Toggle Button */}
+                <button
+                    type="button"
+                    onClick={toggleSound}
+                    className="absolute left-6 top-6 md:left-10 md:top-10 z-[200] grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/50 text-[#f1cf8a] transition hover:bg-white/10"
+                    title={effectiveSound ? "Mute ads" : "Enable sound"}
+                >
+                    {effectiveSound ? <Volume2 size={18} /> : <VolumeX size={18} />}
+                </button>
+
+                {/* Top-right countdown */}
+                <div className="absolute right-6 top-6 md:right-10 md:top-10 z-20">
+                    <div className="relative grid h-24 w-24 md:h-32 md:w-32 place-items-center rounded-full border-4 border-[#f1cf8a]/40 bg-black/70 backdrop-blur-md shadow-[0_0_40px_rgba(241,207,138,0.35)]">
+                        <svg className="absolute inset-0 -rotate-90" viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
+                            <circle
+                                cx="50" cy="50" r="44"
+                                fill="none"
+                                stroke="#f1cf8a"
+                                strokeWidth="4"
+                                strokeLinecap="round"
+                                strokeDasharray={`${2 * Math.PI * 44}`}
+                                strokeDashoffset={`${2 * Math.PI * 44 * (1 - adRemaining / total)}`}
+                                style={{ transition: "stroke-dashoffset 1s linear" }}
+                            />
+                        </svg>
+                        <div className="text-center">
+                            <div className="serif text-4xl md:text-6xl font-bold text-[#f1cf8a] tabular-nums leading-none">
+                                {adRemaining}
                             </div>
-                        </div>
-                    </div>
-
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/80 to-transparent p-5 md:p-8">
-                        <div className="flex flex-wrap items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                                <span className="rounded-full bg-[#f1cf8a]/20 border border-[#f1cf8a]/60 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.24em] text-[#f1cf8a]">
-                                    Ad
-                                </span>
-                                <div className="min-w-0">
-                                    <div className="serif truncate text-xl font-semibold text-white">{playingAd.campaign.advertiserName}</div>
-                                    {playingAd.video?.title && (
-                                        <div className="text-xs text-[#d9c9b8] truncate">
-                                            {playingAd.video.title}
-                                            {playingAd.campaign.campaignTitle ? ` · ${playingAd.campaign.campaignTitle}` : ""}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-4">
-                                {data.upNext.length > 0 && (
-                                    <div className="text-right">
-                                        <div className="text-[10px] uppercase tracking-[.24em] text-[#8a6d53]">Up next</div>
-                                        <div className="mt-0.5 text-base font-semibold text-white">
-                                            {data.upNext.slice(0, 4).map(t => `#${t.tokenNumber}`).join(" · ")}
-                                        </div>
-                                    </div>
-                                )}
+                            <div className="mt-1 text-[9px] md:text-[10px] uppercase tracking-[.24em] text-[#a88b6f]">
+                                sec
                             </div>
                         </div>
                     </div>
                 </div>
-            </>
+
+                <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black via-black/80 to-transparent p-5 md:p-8 pointer-events-none">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                            <span className="rounded-full bg-[#f1cf8a]/20 border border-[#f1cf8a]/60 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.24em] text-[#f1cf8a]">
+                                Ad
+                            </span>
+                            <div className="min-w-0">
+                                <div className="serif truncate text-xl font-semibold text-white">{playingAd.campaign.advertiserName}</div>
+                                {playingAd.video?.title && (
+                                    <div className="text-xs text-[#d9c9b8] truncate">
+                                        {playingAd.video.title}
+                                        {playingAd.campaign.campaignTitle ? ` · ${playingAd.campaign.campaignTitle}` : ""}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                            {upNext.length > 0 && (
+                                <div className="text-right">
+                                    <div className="text-[10px] uppercase tracking-[.24em] text-[#8a6d53]">Up next</div>
+                                    <div className="mt-0.5 text-base font-semibold text-white">
+                                        {upNext.slice(0, 4).map((t) => `#${t.tokenNumber}`).join(" · ")}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
         );
     }
 
@@ -544,161 +495,168 @@ export default function MonitorPage({ eventId }) {
     const dateStr = now.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
 
     return (
-        <>
-            {soundGate}
-            <div className="min-h-screen bg-[#120a06] text-white relative overflow-hidden">
-                <div className="absolute inset-0 opacity-[0.035]" style={{ backgroundImage: "radial-gradient(#f1cf8a 1.5px, transparent 1.5px)", backgroundSize: "36px 36px" }} />
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1400px] h-[600px] bg-[#f1cf8a]/5 blur-[160px] rounded-full pointer-events-none" />
+        <div className="min-h-screen bg-[#120a06] text-white relative overflow-hidden">
+            {/* Floating Sound Toggle Button */}
+            <button
+                type="button"
+                onClick={toggleSound}
+                className="fixed top-24 right-6 md:right-10 z-[200] grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/50 text-[#f1cf8a] transition hover:bg-white/10"
+                title={effectiveSound ? "Mute ads" : "Enable sound"}
+            >
+                {effectiveSound ? <Volume2 size={18} /> : <VolumeX size={18} />}
+            </button>
 
-                <div className="relative z-10 flex flex-col min-h-screen">
-                    <header className="flex items-center justify-between px-6 md:px-10 py-5 border-b border-white/5">
-                        <div className="flex items-center gap-3">
-                            <div className="grid h-12 w-12 place-items-center rounded-full bg-gradient-to-br from-[#24170f] to-[#382419] text-[#f1cf8a] serif text-xl ring-1 ring-[#f1cf8a]/30">M</div>
-                            <div>
-                                <div className="serif text-lg font-bold leading-tight">Mehndi Studio</div>
-                                <div className="text-xs text-[#8a6d53]">Live queue</div>
-                            </div>
+            <div className="absolute inset-0 opacity-[0.035]" style={{ backgroundImage: "radial-gradient(#f1cf8a 1.5px, transparent 1.5px)", backgroundSize: "36px 36px" }} />
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1400px] h-[600px] bg-[#f1cf8a]/5 blur-[160px] rounded-full pointer-events-none" />
+
+            <div className="relative z-10 flex flex-col min-h-screen">
+                <header className="flex items-center justify-between px-6 md:px-10 py-5 border-b border-white/5">
+                    <div className="flex items-center gap-3">
+                        <div className="grid h-12 w-12 place-items-center rounded-full bg-gradient-to-br from-[#24170f] to-[#382419] text-[#f1cf8a] serif text-xl ring-1 ring-[#f1cf8a]/30">M</div>
+                        <div>
+                            <div className="serif text-lg font-bold leading-tight">Mehndi Studio</div>
+                            <div className="text-xs text-[#8a6d53]">Live queue</div>
                         </div>
-                        <div className="flex items-center gap-4 md:gap-6">
-                            <div className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold ${connected ? "border-[#1d7a3e]/40 bg-[#1d7a3e]/10 text-[#4ade80]" : "border-red-500/40 bg-red-500/10 text-red-300"}`}>
-                                {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
-                                <span className="hidden sm:inline">{connected ? "Live" : "Reconnecting"}</span>
-                            </div>
-                            <button type="button" onClick={toggleFullscreen}
-                                title={isFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}
-                                className="grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-white/5 text-[#f1cf8a] transition hover:bg-white/10">
-                                {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
-                            </button>
-                            <div className="text-right">
-                                <div className="flex items-center gap-2 text-2xl md:text-3xl font-bold tabular-nums text-[#f1cf8a] leading-none">
-                                    <Clock size={22} /> {timeStr}
-                                </div>
-                                <div className="text-xs text-[#8a6d53] mt-1">{dateStr}</div>
-                            </div>
+                    </div>
+                    <div className="flex items-center gap-4 md:gap-6">
+                        <div className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold ${connected ? "border-[#1d7a3e]/40 bg-[#1d7a3e]/10 text-[#4ade80]" : "border-red-500/40 bg-red-500/10 text-red-300"}`}>
+                            {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
+                            <span className="hidden sm:inline">{connected ? "Live" : "Reconnecting"}</span>
                         </div>
-                    </header>
-
-                    <div className="text-center pt-8 pb-4 px-6">
-                        <h1 className="serif text-4xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-b from-white to-[#d9c9b8] leading-tight">
-                            {data.event.name}
-                        </h1>
-                    </div>
-
-                    <div className="flex-1 grid place-items-center px-6 md:px-10 py-6">
-                        {sessions.length === 0 ? (
-                            <div className="text-center">
-                                <div className="serif text-6xl md:text-8xl font-bold text-[#f1cf8a]/40">Waiting…</div>
-                                <div className="mt-3 text-lg text-[#a88b6f]">
-                                    {data.totalTokens > 0 ? "Please wait for the next token" : "No orders yet"}
-                                </div>
+                        <button type="button" onClick={toggleFullscreen}
+                            title={isFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}
+                            className="grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-white/5 text-[#f1cf8a] transition hover:bg-white/10">
+                            {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+                        </button>
+                        <div className="text-right">
+                            <div className="flex items-center gap-2 text-2xl md:text-3xl font-bold tabular-nums text-[#f1cf8a] leading-none">
+                                <Clock size={22} /> {timeStr}
                             </div>
-                        ) : sessions.length === 1 ? (
-                            <SingleSessionLayout session={sessions[0]} now={now} />
-                        ) : (
-                            <MultiSessionLayout sessions={sessions} now={now} />
-                        )}
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-6 px-6 md:px-10 pb-8">
-                        <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
-                            <div className="flex items-center gap-3 mb-5">
-                                <div className="grid h-10 w-10 place-items-center rounded-full bg-[#f1cf8a]/15 text-[#f1cf8a]"><Users size={19} /></div>
-                                <h2 className="serif text-xl font-bold">Up next</h2>
-                                <div className="ml-auto rounded-full bg-white/5 px-3 py-1 text-xs font-semibold text-[#d9c9b8]">
-                                    {data.upNext.length} waiting
-                                </div>
-                            </div>
-                            {data.upNext.length === 0 ? (
-                                <div className="py-10 text-center text-sm text-[#8a6d53]">No one in the queue</div>
-                            ) : (
-                                <div className="grid gap-3">
-                                    {data.upNext.map((t, i) => (
-                                        <div key={t.tokenNumber} className="flex items-center gap-4 rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3">
-                                            <div className={`grid h-14 w-14 shrink-0 place-items-center rounded-xl ${i === 0 ? "bg-[#f1cf8a]/20 text-[#f1cf8a] border border-[#f1cf8a]/40" : "bg-white/5 text-[#d9c9b8] border border-white/10"}`}>
-                                                <span className="serif text-2xl font-bold tabular-nums">{t.tokenNumber}</span>
-                                            </div>
-                                            {t.image && (
-                                                <div className="h-14 w-14 shrink-0 rounded-xl overflow-hidden border border-white/10">
-                                                    <img src={buildImageUrl(t.image)} alt="" className="h-full w-full object-cover" />
-                                                </div>
-                                            )}
-                                            <div className="min-w-0 flex-1">
-                                                <div className="truncate text-base font-semibold">{t.username}</div>
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    {t.isGroupMember && (
-                                                        <span className="inline-flex items-center gap-1 rounded-full bg-[#f1cf8a]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f1cf8a]">
-                                                            <Users size={10} /> Group · {t.groupOwner}
-                                                        </span>
-                                                    )}
-                                                    {t.isCustom && (
-                                                        <span className="inline-flex items-center gap-1 rounded-full bg-[#f1cf8a]/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f1cf8a]">
-                                                            <Palette size={10} /> Custom
-                                                        </span>
-                                                    )}
-                                                    {i === 0 && (
-                                                        <span className="text-xs font-semibold text-[#f1cf8a]">Next in line</span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </section>
-
-                        <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
-                            <div className="flex items-center gap-3 mb-5">
-                                <div className="grid h-10 w-10 place-items-center rounded-full bg-[#1d7a3e]/20 text-[#4ade80]"><CheckCircle2 size={19} /></div>
-                                <h2 className="serif text-xl font-bold">Recently completed</h2>
-                                <div className="ml-auto rounded-full bg-white/5 px-3 py-1 text-xs font-semibold text-[#d9c9b8]">
-                                    {data.recentlyCompleted.length} done
-                                </div>
-                            </div>
-                            {data.recentlyCompleted.length === 0 ? (
-                                <div className="py-10 text-center text-sm text-[#8a6d53]">No completed tokens yet</div>
-                            ) : (
-                                <div className="grid gap-3">
-                                    {data.recentlyCompleted.map((t) => (
-                                        <div key={t.tokenNumber} className="flex items-center gap-4 rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 opacity-80">
-                                            <div className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-[#1d7a3e]/15 text-[#4ade80] border border-[#1d7a3e]/30">
-                                                <span className="serif text-2xl font-bold tabular-nums">{t.tokenNumber}</span>
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="truncate text-base font-semibold text-[#d9c9b8]">{t.username}</div>
-                                                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-[#4ade80]">
-                                                    <CheckCircle2 size={12} /> Done
-                                                    {t.durationSeconds > 0 && <span className="text-[#8a6d53]">{formatTimer(t.durationSeconds)}</span>}
-                                                    {t.isGroupMember && (
-                                                        <span className="inline-flex items-center gap-1 rounded-full bg-[#f1cf8a]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f1cf8a]">
-                                                            <Users size={10} /> Group · {t.groupOwner}
-                                                        </span>
-                                                    )}
-                                                    {t.isCustom && (
-                                                        <span className="inline-flex items-center gap-1 rounded-full bg-[#f1cf8a]/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f1cf8a]">
-                                                            <Palette size={10} /> Custom
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </section>
-                    </div>
-
-                    <footer className="border-t border-white/5 px-6 md:px-10 py-4 flex items-center justify-between text-xs text-[#8a6d53]">
-                        <div>Total tokens: <span className="text-[#f1cf8a] font-bold">{data.totalTokens}</span></div>
-                        <div className="flex items-center gap-2">
-                            <span className="relative flex h-2 w-2">
-                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#4ade80] opacity-60" />
-                                <span className="relative inline-flex h-2 w-2 rounded-full bg-[#4ade80]" />
-                            </span>
-                            Refreshes every 8 seconds
+                            <div className="text-xs text-[#8a6d53] mt-1">{dateStr}</div>
                         </div>
-                    </footer>
+                    </div>
+                </header>
+
+                <div className="text-center pt-8 pb-4 px-6">
+                    <h1 className="serif text-4xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-b from-white to-[#d9c9b8] leading-tight">
+                        {data.event?.name}
+                    </h1>
                 </div>
+
+                <div className="flex-1 grid place-items-center px-6 md:px-10 py-6">
+                    {sessions.length === 0 ? (
+                        <div className="text-center">
+                            <div className="serif text-6xl md:text-8xl font-bold text-[#f1cf8a]/40">Waiting…</div>
+                            <div className="mt-3 text-lg text-[#a88b6f]">
+                                {data.totalTokens > 0 ? "Please wait for the next token" : "No orders yet"}
+                            </div>
+                        </div>
+                    ) : sessions.length === 1 ? (
+                        <SingleSessionLayout session={sessions[0]} now={now} />
+                    ) : (
+                        <MultiSessionLayout sessions={sessions} now={now} />
+                    )}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-6 px-6 md:px-10 pb-8">
+                    <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
+                        <div className="flex items-center gap-3 mb-5">
+                            <div className="grid h-10 w-10 place-items-center rounded-full bg-[#f1cf8a]/15 text-[#f1cf8a]"><Users size={19} /></div>
+                            <h2 className="serif text-xl font-bold">Up next</h2>
+                            <div className="ml-auto rounded-full bg-white/5 px-3 py-1 text-xs font-semibold text-[#d9c9b8]">
+                                {upNext.length} waiting
+                            </div>
+                        </div>
+                        {upNext.length === 0 ? (
+                            <div className="py-10 text-center text-sm text-[#8a6d53]">No one in the queue</div>
+                        ) : (
+                            <div className="grid gap-3">
+                                {upNext.map((t, i) => (
+                                    <div key={t.tokenNumber} className="flex items-center gap-4 rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3">
+                                        <div className={`grid h-14 w-14 shrink-0 place-items-center rounded-xl ${i === 0 ? "bg-[#f1cf8a]/20 text-[#f1cf8a] border border-[#f1cf8a]/40" : "bg-white/5 text-[#d9c9b8] border border-white/10"}`}>
+                                            <span className="serif text-2xl font-bold tabular-nums">{t.tokenNumber}</span>
+                                        </div>
+                                        {t.image && (
+                                            <div className="h-14 w-14 shrink-0 rounded-xl overflow-hidden border border-white/10">
+                                                <img src={buildImageUrl(t.image)} alt="" className="h-full w-full object-cover" />
+                                            </div>
+                                        )}
+                                        <div className="min-w-0 flex-1">
+                                            <div className="truncate text-base font-semibold">{t.username}</div>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                {t.isGroupMember && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#f1cf8a]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f1cf8a]">
+                                                        <Users size={10} /> Group · {t.groupOwner}
+                                                    </span>
+                                                )}
+                                                {t.isCustom && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#f1cf8a]/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f1cf8a]">
+                                                        <Palette size={10} /> Custom
+                                                    </span>
+                                                )}
+                                                {i === 0 && (
+                                                    <span className="text-xs font-semibold text-[#f1cf8a]">Next in line</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </section>
+
+                    <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
+                        <div className="flex items-center gap-3 mb-5">
+                            <div className="grid h-10 w-10 place-items-center rounded-full bg-[#1d7a3e]/20 text-[#4ade80]"><CheckCircle2 size={19} /></div>
+                            <h2 className="serif text-xl font-bold">Recently completed</h2>
+                            <div className="ml-auto rounded-full bg-white/5 px-3 py-1 text-xs font-semibold text-[#d9c9b8]">
+                                {recentlyCompleted.length} done
+                            </div>
+                        </div>
+                        {recentlyCompleted.length === 0 ? (
+                            <div className="py-10 text-center text-sm text-[#8a6d53]">No completed tokens yet</div>
+                        ) : (
+                            <div className="grid gap-3">
+                                {recentlyCompleted.map((t) => (
+                                    <div key={t.tokenNumber} className="flex items-center gap-4 rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 opacity-80">
+                                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-[#1d7a3e]/15 text-[#4ade80] border border-[#1d7a3e]/30">
+                                            <span className="serif text-2xl font-bold tabular-nums">{t.tokenNumber}</span>
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="truncate text-base font-semibold text-[#d9c9b8]">{t.username}</div>
+                                            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-[#4ade80]">
+                                                <CheckCircle2 size={12} /> Done
+                                                {t.durationSeconds > 0 && <span className="text-[#8a6d53]">{formatTimer(t.durationSeconds)}</span>}
+                                                {t.isGroupMember && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#f1cf8a]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f1cf8a]">
+                                                        <Users size={10} /> Group · {t.groupOwner}
+                                                    </span>
+                                                )}
+                                                {t.isCustom && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#f1cf8a]/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f1cf8a]">
+                                                        <Palette size={10} /> Custom
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </section>
+                </div>
+
+                <footer className="border-t border-white/5 px-6 md:px-10 py-4 flex items-center justify-between text-xs text-[#8a6d53]">
+                    <div>Total tokens: <span className="text-[#f1cf8a] font-bold">{data.totalTokens}</span></div>
+                    <div className="flex items-center gap-2">
+                        <span className="relative flex h-2 w-2">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#4ade80] opacity-60" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-[#4ade80]" />
+                        </span>
+                        Refreshes every 8 seconds
+                    </div>
+                </footer>
             </div>
-        </>
+        </div>
     );
 }

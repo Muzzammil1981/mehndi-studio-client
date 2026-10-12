@@ -3,7 +3,7 @@ import {
     LogOut, Image as ImageIcon, Users, Bell, Plus, X, Upload, Loader2,
     Calendar, Clock, CheckCircle2, XCircle, ShieldAlert, Play, Square,
     BarChart3, LayoutGrid, Trash2, QrCode, Search, Monitor,
-    Timer, Palette, Coins, Megaphone,
+    Timer, Palette, Coins, Megaphone, Edit,
 } from "lucide-react";
 import { io } from "socket.io-client";
 import GoogleDriveCard from "./GoogleDriveCard";
@@ -258,6 +258,7 @@ function EventsManager() {
     const [priceOverrides, setPriceOverrides] = useState({});
     const [monitorEvent, setMonitorEvent] = useState(null);
     const [adsEvent, setAdsEvent] = useState(null);
+    const [editingEvent, setEditingEvent] = useState(null);
 
     useEffect(() => {
         fetchEvents();
@@ -448,8 +449,8 @@ function EventsManager() {
                         }[status];
 
                         return (
-                            <div key={e.id} className={`bg-white p-5 rounded-2xl border ${isActive ? 'border-[#1d7a3e] shadow-[0_0_15px_rgba(29,122,62,0.15)]' : 'border-[#eadfce]'} flex justify-between items-center shadow-sm hover:shadow-md transition`}>
-                                <div>
+                            <div key={e.id} className={`bg-white p-5 rounded-2xl border ${isActive ? 'border-[#1d7a3e] shadow-[0_0_15px_rgba(29,122,62,0.15)]' : 'border-[#eadfce]'} flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 shadow-sm hover:shadow-md transition`}>
+                                <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-3 flex-wrap">
                                         <div className={`font-semibold text-lg ${isClosed ? 'text-[#8a6d53]' : 'text-[#24170f]'}`}>{e.name}</div>
                                         <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border ${statusConfig.color}`}>
@@ -461,23 +462,26 @@ function EventsManager() {
                                         <span className="flex items-center gap-1"><Clock size={12} /> End: {new Date(e.endDate).toLocaleString()}</span>
                                     </div>
                                     <div className="text-[10px] text-[#7d3f24] font-semibold mt-2 bg-[#f4eadc] inline-block px-2 py-1 rounded-full">
-                                        {e.designIds.includes("all") ? "All Designs Included" : `${e.designIds.length} Designs Included`}
+                                        {e.designIds?.includes("all") ? "All Designs Included" : `${e.designIds?.length || 0} Designs Included`}
                                     </div>
                                     <div className="text-[10px] text-[#1d7a3e] font-semibold mt-2 ml-2 bg-[#e2f0e5] inline-block px-2 py-1 rounded-full">
                                         Token Counter: #{e.tokenCounter || 0}
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <button onClick={() => setQrEvent(e)} className="text-[#7d3f24] p-3 hover:bg-[#f4eadc] rounded-full transition" title="Generate QR Code">
+                                <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                                    <button onClick={() => setEditingEvent(e)} className="text-[#7d3f24] p-2.5 sm:p-3 hover:bg-[#f4eadc] rounded-full transition" title="Edit Event Dates">
+                                        <Edit size={18} />
+                                    </button>
+                                    <button onClick={() => setQrEvent(e)} className="text-[#7d3f24] p-2.5 sm:p-3 hover:bg-[#f4eadc] rounded-full transition" title="Generate QR Code">
                                         <QrCode size={18} />
                                     </button>
-                                    <button onClick={() => setMonitorEvent(e)} className="text-[#1d7a3e] p-3 hover:bg-[#e2f0e5] rounded-full transition" title="Monitor Display Link">
+                                    <button onClick={() => setMonitorEvent(e)} className="text-[#1d7a3e] p-2.5 sm:p-3 hover:bg-[#e2f0e5] rounded-full transition" title="Monitor Display Link">
                                         <Monitor size={18} />
                                     </button>
-                                    <button onClick={() => setAdsEvent(e)} className="text-[#7d3f24] p-3 hover:bg-[#f4eadc] rounded-full transition" title="Manage Advertisements">
+                                    <button onClick={() => setAdsEvent(e)} className="text-[#7d3f24] p-2.5 sm:p-3 hover:bg-[#f4eadc] rounded-full transition" title="Manage Advertisements">
                                         <Megaphone size={18} />
                                     </button>
-                                    <button onClick={() => deleteEvent(e.id)} className="text-red-500 p-3 hover:bg-red-50 rounded-full transition" title="Delete Event">
+                                    <button onClick={() => deleteEvent(e.id)} className="text-red-500 p-2.5 sm:p-3 hover:bg-red-50 rounded-full transition" title="Delete Event">
                                         <Trash2 size={18} />
                                     </button>
                                 </div>
@@ -561,6 +565,15 @@ function EventsManager() {
                 />
             )}
 
+            {/* EDIT EVENT MODAL */}
+            {editingEvent && (
+                <EditEventModal
+                    event={editingEvent}
+                    onClose={() => setEditingEvent(null)}
+                    onSaved={() => { setEditingEvent(null); fetchEvents(); }}
+                />
+            )}
+
             {/* DESIGN IMAGE PREVIEW MODAL */}
             {previewDesign && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center bg-[#20140e]/80 backdrop-blur-sm p-4" onMouseDown={() => setPreviewDesign(null)}>
@@ -578,6 +591,136 @@ function EventsManager() {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+/* =========================================================
+   EDIT EVENT MODAL
+   ========================================================= */
+/* =========================================================
+   EDIT EVENT MODAL
+   ========================================================= */
+function EditEventModal({ event, onClose, onSaved }) {
+    const formatForInput = (dateString) => {
+        if (!dateString) return "";
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return "";
+        const offset = date.getTimezoneOffset() * 60000;
+        return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+    };
+
+    const [form, setForm] = useState({
+        name: event.name || "",
+        startDate: formatForInput(event.startDate),
+        endDate: formatForInput(event.endDate),
+    });
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+
+    // Real-time validation: Is the end date/time before or equal to the start?
+    const isDateInvalid = () => {
+        if (!form.startDate || !form.endDate) return false;
+        const start = new Date(form.startDate);
+        const end = new Date(form.endDate);
+        return end <= start;
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+
+        if (isDateInvalid()) {
+            setError("End date and time must be after the start date and time. If the event ends the next day, please change the End Date as well.");
+            return;
+        }
+
+        setBusy(true);
+        setError("");
+
+        try {
+            const payload = {
+                name: form.name,
+                startDate: new Date(form.startDate).toISOString(),
+                endDate: new Date(form.endDate).toISOString(),
+            };
+
+            await api.patch(`/api/events/${event.id}`, payload);
+            onSaved();
+        } catch (err) {
+            setError(err.response?.data?.message || "Failed to update event");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[115] flex items-center justify-center bg-[#20140e]/70 backdrop-blur-sm p-4" onMouseDown={onClose}>
+            <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl" onMouseDown={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-5">
+                    <h2 className="serif text-xl font-bold text-[#24170f]">Edit Event Details</h2>
+                    <button onClick={onClose} className="text-[#8a6d53] hover:text-[#24170f]">
+                        <X size={20} />
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <label className="grid gap-1.5 text-sm font-semibold text-[#5b4636]">
+                        Event Name
+                        <input
+                            type="text"
+                            required
+                            value={form.name}
+                            onChange={(e) => setForm({ ...form, name: e.target.value })}
+                            className="rounded-xl border border-[#ddcdb8] px-3 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                        />
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <label className="grid gap-1.5 text-sm font-semibold text-[#5b4636]">
+                            Start Date & Time
+                            <input
+                                type="datetime-local"
+                                required
+                                value={form.startDate}
+                                onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+                                className="rounded-xl border border-[#ddcdb8] px-3 py-2.5 text-xs font-normal outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                            />
+                        </label>
+                        <label className="grid gap-1.5 text-sm font-semibold text-[#5b4636]">
+                            End Date & Time
+                            <input
+                                type="datetime-local"
+                                required
+                                value={form.endDate}
+                                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                                className="rounded-xl border border-[#ddcdb8] px-3 py-2.5 text-xs font-normal outline-none focus:ring-2 focus:ring-[#b07a4f]"
+                            />
+                        </label>
+                    </div>
+
+                    {/* Frontend warning for invalid dates */}
+                    {isDateInvalid() && (
+                        <div className="rounded-xl bg-[#fdf3d6] px-4 py-3 text-xs text-[#8a6d1c]">
+                            ⚠️ <strong>Invalid time range:</strong> The end time is before the start time. If the event ends the next day, please change the <strong>End Date</strong> to the next day.
+                        </div>
+                    )}
+
+                    {error && <div className="rounded-xl bg-[#f8e4df] px-4 py-3 text-sm text-[#8c392d]">{error}</div>}
+
+                    <div className="flex gap-2 pt-2">
+                        <button type="button" onClick={onClose} className="flex-1 rounded-full border border-[#ded0bc] bg-white py-3 text-sm font-semibold">
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={busy || isDateInvalid()}
+                            className="flex-1 rounded-full bg-[#24170f] py-3 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                            {busy ? "Saving..." : "Save Changes"}
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     );
 }
